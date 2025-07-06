@@ -208,7 +208,31 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.templates["home"].ExecuteTemplate(w, "base.html", nil)
+	// Get all quizzes from database
+	rows, err := s.db.Query(
+		"SELECT id, topic, num_questions, source_material, difficulty, created_at, status FROM quizzes ORDER BY created_at DESC LIMIT 10",
+	)
+	if err != nil {
+		log.Printf("Failed to get quizzes: %v", err)
+		http.Error(w, "Failed to get quizzes", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var quizzes []Quiz
+	for rows.Next() {
+		var quiz Quiz
+		err := rows.Scan(&quiz.ID, &quiz.Topic, &quiz.NumQuestions, &quiz.SourceMaterial, &quiz.Difficulty, &quiz.CreatedAt, &quiz.Status)
+		if err != nil {
+			log.Printf("Failed to scan quiz: %v", err)
+			continue
+		}
+		quizzes = append(quizzes, quiz)
+	}
+
+	err = s.templates["home"].ExecuteTemplate(w, "base.html", map[string]interface{}{
+		"Quizzes": quizzes,
+	})
 	if err != nil {
 		log.Printf("Template error in home: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)

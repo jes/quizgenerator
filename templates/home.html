@@ -18,4 +18,34 @@
         <li>Review results and explanations at the end</li>
     </ol>
 </div>
+
+{{if .Quizzes}}
+<div style="margin-top: 40px;">
+    <h2>📚 Available Quizzes</h2>
+    <div style="display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));">
+        {{range .Quizzes}}
+        <div class="question" style="margin: 0;">
+            <h3>{{.Topic}}</h3>
+            <p><strong>Questions:</strong> {{.NumQuestions}}</p>
+            <p><strong>Difficulty:</strong> {{.Difficulty}}</p>
+            <p><strong>Created:</strong> {{.CreatedAt.Format "Jan 2, 2006 3:04 PM"}}</p>
+            <p><strong>Status:</strong> 
+                {{if eq .Status "generating"}}
+                    <span style="color: #ffc107;">⏳ Generating...</span>
+                {{else if eq .Status "ready"}}
+                    <span style="color: #28a745;">✅ Ready to play!</span>
+                {{else}}
+                    <span style="color: #6c757d;">{{.Status}}</span>
+                {{end}}
+            </p>
+            {{if eq .Status "ready"}}
+            <div style="text-align: center; margin-top: 15px;">
+                <a href="/quiz/{{.ID}}" class="btn">Play Quiz</a>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
 {{end}} 
