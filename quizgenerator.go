@@ -98,7 +98,7 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 		}
 
 		acceptedCount := 0
-		batchSize := 5
+		batchSize := req.NumQuestions
 
 		for acceptedCount < req.NumQuestions {
 			// Generate new questions if pool is empty
@@ -171,12 +171,6 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 				case <-ctx.Done():
 					return
 				}
-			}
-
-			// If we're not making progress, increase batch size
-			if acceptedCount == 0 {
-				batchSize = min(batchSize+2, 10)
-				VerboseLog("No questions accepted, increasing batch size to %d", batchSize)
 			}
 		}
 	}()
