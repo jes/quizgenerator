@@ -144,8 +144,12 @@ func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.Generati
 		log.Fatalf("Failed to start quiz stream: %v", err)
 	}
 
-	// Interactive quiz playing
+	// Collect all questions and answers
+	var questions []*quizgenerator.Question
 	questionNum := 0
+
+	fmt.Println("📝 Answer all questions - results will be shown at the end!")
+	fmt.Println()
 
 	for question := range questionChan {
 		questionNum++
@@ -160,8 +164,7 @@ func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.Generati
 		fmt.Println()
 
 		// Get answers from all players
-		playerAnswers := make([]int, numPlayers)
-		for i, player := range players {
+		for _, player := range players {
 			var userAnswer string
 			for {
 				fmt.Printf("%s's answer (A/B/C/D): ", player.Name)
@@ -175,36 +178,11 @@ func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.Generati
 			}
 
 			playerIndex := strings.Index("ABCD", userAnswer)
-			playerAnswers[i] = playerIndex
 			player.Answers = append(player.Answers, playerIndex)
 		}
 
-		// Check answers and update scores
-		fmt.Println()
-		correctOption := options[question.CorrectAnswer]
-
-		for i, player := range players {
-			isCorrect := playerAnswers[i] == question.CorrectAnswer
-
-			if isCorrect {
-				fmt.Printf("✅ %s: Correct!\n", player.Name)
-				player.Score++
-			} else {
-				fmt.Printf("❌ %s: Incorrect. The correct answer is %s) %s\n",
-					player.Name, correctOption, question.Options[question.CorrectAnswer])
-			}
-		}
-
-		if question.Explanation != "" {
-			fmt.Printf("💡 Explanation: %s\n", question.Explanation)
-		}
-
-		// Show current scores
-		fmt.Println("\n📊 Current Scores:")
-		for _, player := range players {
-			percentage := float64(player.Score) / float64(questionNum) * 100
-			fmt.Printf("  %s: %d/%d (%.1f%%)\n", player.Name, player.Score, questionNum, percentage)
-		}
+		// Store the question for later review
+		questions = append(questions, question)
 
 		fmt.Println()
 		fmt.Println(strings.Repeat("─", 50))
@@ -217,8 +195,69 @@ func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.Generati
 		}
 	}
 
+	// Now show the results review
+	fmt.Println("🎉 Quiz completed! Let's review the results...")
+	fmt.Println()
+	fmt.Println("Press Enter to start the review...")
+	scanner.Scan()
+
+	// Review each question
+	for i, question := range questions {
+		fmt.Printf("\n📋 Question %d/%d:\n", i+1, len(questions))
+		fmt.Printf("%s\n\n", question.Text)
+
+		// Display options with correct answer highlighted
+		options := []string{"A", "B", "C", "D"}
+
+		for j, option := range question.Options {
+			if j == question.CorrectAnswer {
+				fmt.Printf("✅ %s) %s (CORRECT)\n", options[j], option)
+			} else {
+				fmt.Printf("   %s) %s\n", options[j], option)
+			}
+		}
+		fmt.Println()
+
+		// Show each player's answer and result
+		fmt.Println("👥 Player Results:")
+		for _, player := range players {
+			playerAnswer := player.Answers[i]
+			isCorrect := playerAnswer == question.CorrectAnswer
+			playerOption := options[playerAnswer]
+
+			if isCorrect {
+				fmt.Printf("  ✅ %s: %s) %s - Correct!\n",
+					player.Name, playerOption, question.Options[playerAnswer])
+				player.Score++
+			} else {
+				fmt.Printf("  ❌ %s: %s) %s - Wrong\n",
+					player.Name, playerOption, question.Options[playerAnswer])
+			}
+		}
+
+		// Show explanation
+		if question.Explanation != "" {
+			fmt.Printf("\n💡 Explanation: %s\n", question.Explanation)
+		}
+
+		// Show current scores after this question
+		fmt.Println("\n📊 Scores after this question:")
+		for _, player := range players {
+			percentage := float64(player.Score) / float64(i+1) * 100
+			fmt.Printf("  %s: %d/%d (%.1f%%)\n", player.Name, player.Score, i+1, percentage)
+		}
+
+		fmt.Println()
+		fmt.Println(strings.Repeat("─", 50))
+
+		// Prompt to continue (except for the last question)
+		if i < len(questions)-1 {
+			fmt.Println("Press Enter to continue to the next question...")
+			scanner.Scan()
+		}
+	}
+
 	// Final results
-	fmt.Println("🎉 Quiz completed!")
 	fmt.Println("\n🏆 Final Results:")
 
 	// Sort players by score (highest first)
