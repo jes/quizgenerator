@@ -1,0 +1,73 @@
+{{define "content"}}
+<h1>🎮 Quiz Setup</h1>
+
+<div class="question">
+    <h2>{{.Topic}}</h2>
+    <p><strong>Questions:</strong> {{.NumQuestions}}</p>
+    <p><strong>Difficulty:</strong> {{.Difficulty}}</p>
+    {{if .SourceMaterial}}
+    <p><strong>Source Material:</strong> {{len .SourceMaterial}} characters</p>
+    {{end}}
+    <p><strong>Status:</strong> 
+        {{if eq .Status "generating"}}
+            <span style="color: #ffc107;">⏳ Generating...</span>
+        {{else if eq .Status "ready"}}
+            <span style="color: #28a745;">✅ Ready to play!</span>
+        {{else}}
+            <span style="color: #6c757d;">{{.Status}}</span>
+        {{end}}
+    </p>
+</div>
+
+{{if eq .Status "generating"}}
+<div class="loading">
+    <div class="spinner"></div>
+    <p>AI is generating your quiz questions...</p>
+    <p>This usually takes 30-60 seconds.</p>
+    <p><small>This page will automatically refresh when ready.</small></p>
+</div>
+
+<script>
+    setTimeout(function() {
+        window.location.reload();
+    }, 1000);
+</script>
+{{else}}
+<form method="POST" action="/quiz/{{.ID}}">
+    <div class="form-group">
+        <label for="num_players">Number of Players</label>
+        <input type="number" id="num_players" name="num_players" value="2" min="1" max="10" onchange="updatePlayerFields()">
+    </div>
+
+    <div id="player_fields">
+        <!-- Player fields will be generated here -->
+    </div>
+
+    <div style="text-align: center; margin-top: 30px;">
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+        <button type="submit" class="btn">Start Quiz</button>
+    </div>
+</form>
+
+<script>
+function updatePlayerFields() {
+    const numPlayers = parseInt(document.getElementById('num_players').value);
+    const container = document.getElementById('player_fields');
+    container.innerHTML = '';
+    
+    for (let i = 1; i <= numPlayers; i++) {
+        const div = document.createElement('div');
+        div.className = 'form-group';
+        div.innerHTML = `
+            <label for="player_${i}">Player ${i} Name</label>
+            <input type="text" id="player_${i}" name="player_${i}" placeholder="Player ${i}" value="Player ${i}">
+        `;
+        container.appendChild(div);
+    }
+}
+
+// Initialize player fields on page load
+updatePlayerFields();
+</script>
+{{end}}
+{{end}} 

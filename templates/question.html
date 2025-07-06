@@ -1,0 +1,38 @@
+{{define "content"}}
+<h1>Question {{.QuestionNum}}</h1>
+
+<div class="question">
+    <h2>{{.Question}}</h2>
+    
+    <div class="options">
+        {{range $index, $option := .Options}}
+        <div class="option">
+            <strong>{{index (list "A" "B" "C" "D") $index}}) {{$option}}</strong>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<form method="POST" action="/quiz/{{.QuizID}}/{{.QuestionNum}}">
+    {{range $playerIndex, $player := .Players}}
+    <div class="player-section">
+        <div class="player-name">{{$player.Name}}</div>
+        <div class="radio-group">
+            {{range $optionIndex, $option := $.Options}}
+            <div class="radio-option">
+                <input type="radio" id="player_{{$playerIndex}}_{{$optionIndex}}" 
+                       name="player_{{$playerIndex}}" value="{{$optionIndex}}" required>
+                <label for="player_{{$playerIndex}}_{{$optionIndex}}">
+                    {{index (list "A" "B" "C" "D") $optionIndex}}) {{$option}}
+                </label>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+
+    <div style="text-align: center; margin-top: 30px;">
+        <button type="submit" class="btn">Submit Answers</button>
+    </div>
+</form>
+{{end}} 

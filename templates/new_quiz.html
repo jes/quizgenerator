@@ -1,0 +1,35 @@
+{{define "content"}}
+<h1>📝 Create New Quiz</h1>
+
+<form method="POST" action="/quiz/new">
+    <div class="form-group">
+        <label for="topic">Quiz Topic *</label>
+        <input type="text" id="topic" name="topic" required placeholder="e.g., World History, Science, Movies, etc.">
+    </div>
+
+    <div class="form-group">
+        <label for="num_questions">Number of Questions</label>
+        <input type="number" id="num_questions" name="num_questions" value="10" min="1" max="50">
+    </div>
+
+    <div class="form-group">
+        <label for="difficulty">Difficulty Level</label>
+        <select id="difficulty" name="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="source_material">Source Material (Optional)</label>
+        <textarea id="source_material" name="source_material" placeholder="Paste any text, articles, or content you'd like the questions to be based on. Leave empty for general knowledge questions."></textarea>
+        <small style="color: #666;">This helps create more specific and accurate questions based on your content.</small>
+    </div>
+
+    <div style="text-align: center; margin-top: 30px;">
+        <a href="/" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn">Create Quiz</button>
+    </div>
+</form>
+{{end}} 

@@ -1,0 +1,15 @@
+{{define "content"}}
+<div class="loading">
+    <div class="spinner"></div>
+    <h2>⏳ Generating Question {{.QuestionNum}}...</h2>
+    <p>AI is working on your quiz questions.</p>
+    <p>This usually takes 30-60 seconds.</p>
+    <p><small>This page will automatically refresh when ready.</small></p>
+</div>
+
+<script>
+    setTimeout(function() {
+        window.location.reload();
+    }, 1000);
+</script>
+{{end}} 

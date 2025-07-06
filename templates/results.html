@@ -1,0 +1,62 @@
+{{define "content"}}
+<h1>🏆 Quiz Results</h1>
+
+<div class="question">
+    <h2>{{.Quiz.Topic}}</h2>
+    <p><strong>Final Scores:</strong></p>
+    {{range $index, $player := .Game.Players}}
+    <div class="score">
+        {{$player.Name}}: {{index $.Game.Scores $index}}/{{$.Quiz.NumQuestions}} 
+        ({{printf "%.1f" (mul (div (index $.Game.Scores $index) $.Quiz.NumQuestions) 100)}}%)
+    </div>
+    {{end}}
+</div>
+
+<div class="results">
+    {{range $qIndex, $question := .Questions}}
+    <div class="result-item">
+        <h3>Question {{add $qIndex 1}}</h3>
+        <p><strong>{{$question.Text}}</strong></p>
+        
+        <div class="options">
+            {{range $optIndex, $option := $question.Options}}
+            <div class="option {{if eq $optIndex $question.CorrectAnswer}}correct{{end}}">
+                <strong>{{index (list "A" "B" "C" "D") $optIndex}}) {{$option}}</strong>
+                {{if eq $optIndex $question.CorrectAnswer}} ✅ (CORRECT){{end}}
+            </div>
+            {{end}}
+        </div>
+
+        <div style="margin-top: 15px;">
+            <strong>Player Answers:</strong>
+            {{range $pIndex, $player := $.Game.Players}}
+            <div class="{{if eq (index (index $.Game.Answers $qIndex) $pIndex) $question.CorrectAnswer}}correct{{else}}incorrect{{end}}">
+                {{$player.Name}}: {{index (list "A" "B" "C" "D") (index (index $.Game.Answers $qIndex) $pIndex)}}) 
+                {{index $question.Options (index (index $.Game.Answers $qIndex) $pIndex)}}
+                {{if eq (index (index $.Game.Answers $qIndex) $pIndex) $question.CorrectAnswer}} ✅{{else}} ❌{{end}}
+            </div>
+            {{end}}
+        </div>
+
+        {{if $question.Explanation}}
+        <div style="margin-top: 15px; padding: 10px; background-color: #e7f3ff; border-radius: 5px;">
+            <strong>💡 Explanation:</strong> {{$question.Explanation}}
+        </div>
+        {{end}}
+
+        <div style="margin-top: 15px;">
+            <strong>Running Scores:</strong>
+            {{range $pIndex, $player := $.Game.Players}}
+            <div>
+                {{$player.Name}}: {{index $.Game.Scores $pIndex}}/{{add $qIndex 1}}
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+</div>
+
+<div style="text-align: center; margin-top: 30px;">
+    <a href="/" class="btn">Create New Quiz</a>
+</div>
+{{end}} 
