@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -26,7 +25,7 @@ func NewQuestionMaker(apiKey string) *QuestionMaker {
 
 // GenerateQuestions generates a batch of questions for the given topic
 func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRequest, batchSize int) ([]*Question, error) {
-	log.Printf("Generating %d questions for topic: %s", batchSize, req.Topic)
+	VerboseLog("Generating %d questions for topic: %s", batchSize, req.Topic)
 
 	prompt := qm.buildPrompt(req, batchSize)
 
@@ -100,7 +99,7 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 		return nil, fmt.Errorf("failed to generate questions: %w", err)
 	}
 
-	log.Printf("Received response from GPT-4o with %d choices", len(resp.Choices))
+	VerboseLog("Received response from GPT-4o with %d choices", len(resp.Choices))
 
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("no response from GPT-4o")
@@ -143,7 +142,7 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 		questions = append(questions, question)
 	}
 
-	log.Printf("Generated %d questions", len(questions))
+	VerboseLog("Generated %d questions", len(questions))
 	return questions, nil
 }
 

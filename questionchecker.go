@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -24,7 +23,7 @@ func NewQuestionChecker(apiKey string) *QuestionChecker {
 
 // CheckQuestion validates a single question and returns the validation result
 func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question) (*ValidationResult, error) {
-	log.Printf("Checking question: %s", question.ID)
+	VerboseLog("Checking question: %s", question.ID)
 
 	prompt := qc.buildPrompt(question)
 
@@ -152,7 +151,7 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 		result.RevisedQuestion = revised
 	}
 
-	log.Printf("Question %s: %s - %s", question.ID, result.Action, result.Reason)
+	VerboseLog("Question %s: %s - %s", question.ID, result.Action, result.Reason)
 	return result, nil
 }
 
