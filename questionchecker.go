@@ -173,19 +173,27 @@ func (qc *QuestionChecker) buildPrompt(question *Question) string {
 	sb.WriteString(fmt.Sprintf("\nCorrect Answer: %d\n", question.CorrectAnswer+1))
 	sb.WriteString(fmt.Sprintf("Explanation: %s\n\n", question.Explanation))
 
-	sb.WriteString("Evaluation criteria:\n")
+	sb.WriteString("CRITICAL EVALUATION CRITERIA:\n")
+	sb.WriteString("🚨 AUTOMATIC REJECTION: If the correct answer appears in the question text, REJECT immediately.\n")
+	sb.WriteString("🚨 AUTOMATIC REJECTION: If the question text contains obvious clues that give away the answer, REJECT immediately.\n")
+
+	sb.WriteString("Additional evaluation criteria:\n")
 	sb.WriteString("1. Is the question clear and unambiguous?\n")
 	sb.WriteString("2. Is the correct answer actually correct?\n")
 	sb.WriteString("3. Are all incorrect options plausible but clearly wrong?\n")
-	sb.WriteString("4. Is the question non-trivial (not answered in the question text)?\n")
-	sb.WriteString("5. Does the question test understanding rather than just memorization?\n")
-	sb.WriteString("6. Are there any obvious clues that give away the answer?\n")
-	sb.WriteString("7. Is the explanation helpful and accurate?\n\n")
+	sb.WriteString("4. Does the question test understanding rather than just memorization?\n")
+	sb.WriteString("5. Does the explanation provide meaningful context or reasoning for WHY the answer is correct?\n\n")
 
-	sb.WriteString("Decide whether to:\n")
-	sb.WriteString("- ACCEPT: The question is good as-is\n")
-	sb.WriteString("- REJECT: The question has fundamental problems that can't be fixed\n")
-	sb.WriteString("- REVISE: The question has potential but needs improvements\n\n")
+	sb.WriteString("Explanation quality check:\n")
+	sb.WriteString("- The explanation should explain WHY the answer is correct, not just restate what the answer is\n")
+	sb.WriteString("- For acronyms, the explanation should break down what each letter stands for\n")
+	sb.WriteString("- For concepts, the explanation should provide context or reasoning\n")
+	sb.WriteString("- Avoid explanations that just repeat the answer in different words\n\n")
+
+	sb.WriteString("Decision guidelines:\n")
+	sb.WriteString("- REJECT: The question has fundamental problems (especially if answer is in question text or explanation is poor)\n")
+	sb.WriteString("- REVISE: The question has potential but needs improvements\n")
+	sb.WriteString("- ACCEPT: The question is good as-is (only if it passes all criteria)\n\n")
 
 	sb.WriteString("If you choose to revise, provide a complete revised version of the question.")
 
