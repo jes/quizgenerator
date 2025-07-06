@@ -14,12 +14,20 @@ import (
 // QuestionMaker generates questions using GPT-4o
 type QuestionMaker struct {
 	client *openai.Client
+	// Maintain conversation context to avoid duplicates
+	messages []openai.ChatCompletionMessage
 }
 
 // NewQuestionMaker creates a new question maker with OpenAI client
 func NewQuestionMaker(apiKey string) *QuestionMaker {
 	return &QuestionMaker{
 		client: openai.NewClient(apiKey),
+		messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: "You are an expert quiz question generator. Generate high-quality multiple choice questions with exactly 4 options each.",
+			},
+		},
 	}
 }
 
@@ -27,7 +35,15 @@ func NewQuestionMaker(apiKey string) *QuestionMaker {
 func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRequest, batchSize int, logger *LLMLogger) ([]*Question, error) {
 	VerboseLog("Generating %d questions for topic: %s", batchSize, req.Topic)
 
+	// Build the prompt for this request
 	prompt := qm.buildPrompt(req, batchSize)
+
+	// Add the user message to the conversation
+	userMessage := openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: prompt,
+	}
+	qm.messages = append(qm.messages, userMessage)
 
 	// Log the request
 	if logger != nil {
@@ -37,17 +53,8 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 	resp, err := qm.client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
-			Model: openai.GPT4o,
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleSystem,
-					Content: "You are an expert quiz question generator. Generate high-quality multiple choice questions with exactly 4 options each.",
-				},
-				{
-					Role:    openai.ChatMessageRoleUser,
-					Content: prompt,
-				},
-			},
+			Model:    openai.GPT4o,
+			Messages: qm.messages,
 			Tools: []openai.Tool{
 				{
 					Type: openai.ToolTypeFunction,
@@ -129,6 +136,23 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 		return nil, fmt.Errorf("unexpected tool call: %s", toolCall.Function.Name)
 	}
 
+	// Add the assistant's response to the conversation context
+	assistantMessage := openai.ChatCompletionMessage{
+		Role:      openai.ChatMessageRoleAssistant,
+		ToolCalls: choice.Message.ToolCalls,
+	}
+	qm.messages = append(qm.messages, assistantMessage)
+
+	// Add tool response messages for each tool call
+	for _, toolCall := range choice.Message.ToolCalls {
+		toolMessage := openai.ChatCompletionMessage{
+			Role:       openai.ChatMessageRoleTool,
+			ToolCallID: toolCall.ID,
+			Content:    toolCall.Function.Arguments,
+		}
+		qm.messages = append(qm.messages, toolMessage)
+	}
+
 	var toolArgs struct {
 		Questions []struct {
 			Text          string   `json:"text"`
@@ -163,26 +187,32 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 func (qm *QuestionMaker) buildPrompt(req GenerationRequest, batchSize int) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Generate %d multiple choice questions about: %s\n\n", batchSize, req.Topic))
+	// If this is the first request, provide the full context
+	if len(qm.messages) == 1 { // Only system message
+		sb.WriteString(fmt.Sprintf("Generate %d multiple choice questions about: %s\n\n", batchSize, req.Topic))
 
-	if req.SourceMaterial != "" {
-		sb.WriteString("Use the following source material as reference:\n")
-		sb.WriteString(req.SourceMaterial)
-		sb.WriteString("\n\n")
+		if req.SourceMaterial != "" {
+			sb.WriteString("Use the following source material as reference:\n")
+			sb.WriteString(req.SourceMaterial)
+			sb.WriteString("\n\n")
+		}
+
+		if req.Difficulty != "" {
+			sb.WriteString(fmt.Sprintf("Difficulty level: %s\n\n", req.Difficulty))
+		}
+
+		sb.WriteString("Requirements:\n")
+		sb.WriteString("- Each question must have exactly 4 multiple choice options\n")
+		sb.WriteString("- The correct answer should be non-obvious but clearly correct\n")
+		sb.WriteString("- Incorrect options should be plausible but clearly wrong\n")
+		sb.WriteString("- Questions should test understanding, not just memorization\n")
+		sb.WriteString("- Avoid questions where the answer is given away in the question text\n")
+		sb.WriteString("- Provide a brief explanation for why the correct answer is right\n")
+		sb.WriteString("- Use the submit_questions tool to return your questions\n")
+	} else {
+		// For subsequent requests, just ask for more unique questions
+		sb.WriteString(fmt.Sprintf("Thanks! Can I have %d more unique questions please? Make sure they are different from the ones you've already generated.", batchSize))
 	}
-
-	if req.Difficulty != "" {
-		sb.WriteString(fmt.Sprintf("Difficulty level: %s\n\n", req.Difficulty))
-	}
-
-	sb.WriteString("Requirements:\n")
-	sb.WriteString("- Each question must have exactly 4 multiple choice options\n")
-	sb.WriteString("- The correct answer should be non-obvious but clearly correct\n")
-	sb.WriteString("- Incorrect options should be plausible but clearly wrong\n")
-	sb.WriteString("- Questions should test understanding, not just memorization\n")
-	sb.WriteString("- Avoid questions where the answer is given away in the question text\n")
-	sb.WriteString("- Provide a brief explanation for why the correct answer is right\n")
-	sb.WriteString("- Use the submit_questions tool to return your questions\n")
 
 	return sb.String()
 }

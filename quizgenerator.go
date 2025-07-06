@@ -187,13 +187,6 @@ func generateQuizID() string {
 	return string(b)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // randomizeAnswerOrder randomizes the order of answer options while preserving the correct answer
 func (qg *QuizGenerator) randomizeAnswerOrder(question *Question) {
 	if len(question.Options) != 4 {
