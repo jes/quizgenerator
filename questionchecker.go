@@ -1,0 +1,194 @@
+package quizgenerator
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"strings"
+
+	openai "github.com/sashabaranov/go-openai"
+)
+
+// QuestionChecker validates and potentially revises questions using GPT-4o
+type QuestionChecker struct {
+	client *openai.Client
+}
+
+// NewQuestionChecker creates a new question checker with OpenAI client
+func NewQuestionChecker(apiKey string) *QuestionChecker {
+	return &QuestionChecker{
+		client: openai.NewClient(apiKey),
+	}
+}
+
+// CheckQuestion validates a single question and returns the validation result
+func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question) (*ValidationResult, error) {
+	log.Printf("Checking question: %s", question.ID)
+
+	prompt := qc.buildPrompt(question)
+
+	resp, err := qc.client.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model: openai.GPT4o,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: "You are an expert quiz question validator. Evaluate questions for quality, clarity, and fairness.",
+				},
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: prompt,
+				},
+			},
+			Tools: []openai.Tool{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name:        "evaluate_question",
+						Description: "Evaluate a quiz question and decide whether to accept, reject, or revise it",
+						Parameters: map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"action": map[string]interface{}{
+									"type":        "string",
+									"enum":        []string{"accept", "reject", "revise"},
+									"description": "What to do with this question",
+								},
+								"reason": map[string]interface{}{
+									"type":        "string",
+									"description": "Explanation for the decision",
+								},
+								"revised_question": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"text": map[string]interface{}{
+											"type":        "string",
+											"description": "The revised question text",
+										},
+										"options": map[string]interface{}{
+											"type": "array",
+											"items": map[string]interface{}{
+												"type": "string",
+											},
+											"description": "Array of 4 multiple choice options",
+										},
+										"correct_answer": map[string]interface{}{
+											"type":        "integer",
+											"description": "0-based index of the correct answer",
+										},
+										"explanation": map[string]interface{}{
+											"type":        "string",
+											"description": "Brief explanation of why the answer is correct",
+										},
+									},
+									"description": "Revised question (only if action is 'revise')",
+								},
+							},
+							"required": []string{"action", "reason"},
+						},
+					},
+				},
+			},
+			ToolChoice: openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: "evaluate_question",
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to check question: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("no response from GPT-4o")
+	}
+
+	choice := resp.Choices[0]
+	if len(choice.Message.ToolCalls) == 0 {
+		return nil, fmt.Errorf("no tool calls in response")
+	}
+
+	toolCall := choice.Message.ToolCalls[0]
+	if toolCall.Function.Name != "evaluate_question" {
+		return nil, fmt.Errorf("unexpected tool call: %s", toolCall.Function.Name)
+	}
+
+	var toolArgs struct {
+		Action          string `json:"action"`
+		Reason          string `json:"reason"`
+		RevisedQuestion *struct {
+			Text          string   `json:"text"`
+			Options       []string `json:"options"`
+			CorrectAnswer int      `json:"correct_answer"`
+			Explanation   string   `json:"explanation"`
+		} `json:"revised_question,omitempty"`
+	}
+
+	if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &toolArgs); err != nil {
+		return nil, fmt.Errorf("failed to parse tool arguments: %w", err)
+	}
+
+	result := &ValidationResult{
+		QuestionID: question.ID,
+		Action:     ValidationAction(toolArgs.Action),
+		Reason:     toolArgs.Reason,
+	}
+
+	if toolArgs.Action == "revise" && toolArgs.RevisedQuestion != nil {
+		revised := &Question{
+			ID:            question.ID, // Keep same ID
+			Text:          toolArgs.RevisedQuestion.Text,
+			Options:       toolArgs.RevisedQuestion.Options,
+			CorrectAnswer: toolArgs.RevisedQuestion.CorrectAnswer,
+			Explanation:   toolArgs.RevisedQuestion.Explanation,
+			Topic:         question.Topic,
+			Status:        StatusRevised,
+		}
+		result.RevisedQuestion = revised
+	}
+
+	log.Printf("Question %s: %s - %s", question.ID, result.Action, result.Reason)
+	return result, nil
+}
+
+func (qc *QuestionChecker) buildPrompt(question *Question) string {
+	var sb strings.Builder
+
+	sb.WriteString("Evaluate the following quiz question:\n\n")
+	sb.WriteString(fmt.Sprintf("Question: %s\n\n", question.Text))
+
+	sb.WriteString("Options:\n")
+	for i, option := range question.Options {
+		marker := " "
+		if i == question.CorrectAnswer {
+			marker = "*"
+		}
+		sb.WriteString(fmt.Sprintf("%s%d. %s\n", marker, i+1, option))
+	}
+
+	sb.WriteString(fmt.Sprintf("\nCorrect Answer: %d\n", question.CorrectAnswer+1))
+	sb.WriteString(fmt.Sprintf("Explanation: %s\n\n", question.Explanation))
+
+	sb.WriteString("Evaluation criteria:\n")
+	sb.WriteString("1. Is the question clear and unambiguous?\n")
+	sb.WriteString("2. Is the correct answer actually correct?\n")
+	sb.WriteString("3. Are all incorrect options plausible but clearly wrong?\n")
+	sb.WriteString("4. Is the question non-trivial (not answered in the question text)?\n")
+	sb.WriteString("5. Does the question test understanding rather than just memorization?\n")
+	sb.WriteString("6. Are there any obvious clues that give away the answer?\n")
+	sb.WriteString("7. Is the explanation helpful and accurate?\n\n")
+
+	sb.WriteString("Decide whether to:\n")
+	sb.WriteString("- ACCEPT: The question is good as-is\n")
+	sb.WriteString("- REJECT: The question has fundamental problems that can't be fixed\n")
+	sb.WriteString("- REVISE: The question has potential but needs improvements\n\n")
+
+	sb.WriteString("If you choose to revise, provide a complete revised version of the question.")
+
+	return sb.String()
+}
