@@ -27,6 +27,11 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 
 	prompt := qc.buildPrompt(question)
 
+	// Log the request
+	if logger := GetGlobalLogger(); logger != nil {
+		logger.LogLLMRequest("QuestionChecker", prompt)
+	}
+
 	resp, err := qc.client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -50,14 +55,14 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 						Parameters: map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
+								"reason": map[string]interface{}{
+									"type":        "string",
+									"description": "Explanation for the decision",
+								},
 								"action": map[string]interface{}{
 									"type":        "string",
 									"enum":        []string{"accept", "reject", "revise"},
 									"description": "What to do with this question",
-								},
-								"reason": map[string]interface{}{
-									"type":        "string",
-									"description": "Explanation for the decision",
 								},
 								"revised_question": map[string]interface{}{
 									"type": "object",
@@ -85,7 +90,7 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 									"description": "Revised question (only if action is 'revise')",
 								},
 							},
-							"required": []string{"action", "reason"},
+							"required": []string{"reason", "action"},
 						},
 					},
 				},
@@ -103,6 +108,15 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 		return nil, fmt.Errorf("failed to check question: %w", err)
 	}
 
+	// Log the response
+	if logger := GetGlobalLogger(); logger != nil {
+		responseText := ""
+		if len(resp.Choices) > 0 && len(resp.Choices[0].Message.ToolCalls) > 0 {
+			responseText = resp.Choices[0].Message.ToolCalls[0].Function.Arguments
+		}
+		logger.LogLLMResponse("QuestionChecker", responseText)
+	}
+
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("no response from GPT-4o")
 	}
@@ -118,8 +132,8 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 	}
 
 	var toolArgs struct {
-		Action          string `json:"action"`
 		Reason          string `json:"reason"`
+		Action          string `json:"action"`
 		RevisedQuestion *struct {
 			Text          string   `json:"text"`
 			Options       []string `json:"options"`
@@ -149,6 +163,11 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 			Status:        StatusRevised,
 		}
 		result.RevisedQuestion = revised
+	}
+
+	// Log the result
+	if logger := GetGlobalLogger(); logger != nil {
+		logger.LogQuestionResult(question.ID, string(result.Action), result.Reason)
 	}
 
 	VerboseLog("Question %s: %s - %s", question.ID, result.Action, result.Reason)

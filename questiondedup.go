@@ -77,6 +77,11 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 
 	prompt := existingQuestions.String() + newQuestion.String() + qd.buildEvaluationCriteria()
 
+	// Log the request
+	if logger := GetGlobalLogger(); logger != nil {
+		logger.LogLLMRequest("QuestionDedup", prompt)
+	}
+
 	resp, err := qd.client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -100,20 +105,20 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 						Parameters: map[string]interface{}{
 							"type": "object",
 							"properties": map[string]interface{}{
-								"is_duplicate": map[string]interface{}{
-									"type":        "boolean",
-									"description": "Whether the new question is a duplicate",
-								},
 								"reason": map[string]interface{}{
 									"type":        "string",
 									"description": "Explanation for the decision",
+								},
+								"is_duplicate": map[string]interface{}{
+									"type":        "boolean",
+									"description": "Whether the new question is a duplicate",
 								},
 								"duplicate_id": map[string]interface{}{
 									"type":        "string",
 									"description": "ID of the duplicate question if found (empty if not a duplicate)",
 								},
 							},
-							"required": []string{"is_duplicate", "reason"},
+							"required": []string{"reason", "is_duplicate"},
 						},
 					},
 				},
@@ -131,6 +136,15 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 		return nil, fmt.Errorf("failed to check duplicate: %w", err)
 	}
 
+	// Log the response
+	if logger := GetGlobalLogger(); logger != nil {
+		responseText := ""
+		if len(resp.Choices) > 0 && len(resp.Choices[0].Message.ToolCalls) > 0 {
+			responseText = resp.Choices[0].Message.ToolCalls[0].Function.Arguments
+		}
+		logger.LogLLMResponse("QuestionDedup", responseText)
+	}
+
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("no response from GPT-4o")
 	}
@@ -146,8 +160,8 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 	}
 
 	var toolArgs struct {
-		IsDuplicate bool   `json:"is_duplicate"`
 		Reason      string `json:"reason"`
+		IsDuplicate bool   `json:"is_duplicate"`
 		DuplicateID string `json:"duplicate_id"`
 	}
 
@@ -164,6 +178,11 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 	// If not a duplicate, add to cache
 	if !result.IsDuplicate {
 		qd.cache[question.ID] = question
+	}
+
+	// Log the result
+	if logger := GetGlobalLogger(); logger != nil {
+		logger.LogDedupResult(question.ID, result.IsDuplicate, result.Reason, result.DuplicateID)
 	}
 
 	VerboseLog("Question %s: duplicate=%v, reason=%s", question.ID, result.IsDuplicate, result.Reason)

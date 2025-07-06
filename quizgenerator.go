@@ -28,6 +28,17 @@ func NewQuizGenerator(apiKey string) *QuizGenerator {
 func (qg *QuizGenerator) GenerateQuiz(ctx context.Context, req GenerationRequest) (*Quiz, error) {
 	VerboseLog("Starting quiz generation for topic: %s, target questions: %d", req.Topic, req.NumQuestions)
 
+	// Create logger for this quiz
+	quizID := generateQuizID()
+	logger, err := NewLLMLogger(quizID, req)
+	if err != nil {
+		VerboseLog("Failed to create logger: %v", err)
+		// Continue without logging rather than failing
+	} else {
+		SetGlobalLogger(logger)
+		defer logger.Close()
+	}
+
 	// Use the streaming version to collect all questions
 	questionChan, err := qg.GenerateQuizStream(ctx, req)
 	if err != nil {
@@ -47,7 +58,7 @@ func (qg *QuizGenerator) GenerateQuiz(ctx context.Context, req GenerationRequest
 	}
 
 	quiz := &Quiz{
-		ID:             generateQuizID(),
+		ID:             quizID,
 		Topic:          req.Topic,
 		Questions:      questions,
 		CreatedAt:      time.Now(),
@@ -62,8 +73,21 @@ func (qg *QuizGenerator) GenerateQuiz(ctx context.Context, req GenerationRequest
 func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationRequest) (<-chan *Question, error) {
 	questionChan := make(chan *Question, req.NumQuestions)
 
+	// Create logger for this quiz
+	quizID := generateQuizID()
+	logger, err := NewLLMLogger(quizID, req)
+	if err != nil {
+		VerboseLog("Failed to create logger: %v", err)
+		// Continue without logging rather than failing
+	} else {
+		SetGlobalLogger(logger)
+	}
+
 	go func() {
 		defer close(questionChan)
+		if logger != nil {
+			defer logger.Close()
+		}
 
 		acceptedCount := 0
 		batchSize := 5

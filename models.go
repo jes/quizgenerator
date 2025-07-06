@@ -36,8 +36,8 @@ type Quiz struct {
 // ValidationResult represents the result of checking a question
 type ValidationResult struct {
 	QuestionID      string           `json:"question_id"`
-	Action          ValidationAction `json:"action"`
 	Reason          string           `json:"reason"`
+	Action          ValidationAction `json:"action"`
 	RevisedQuestion *Question        `json:"revised_question,omitempty"`
 }
 

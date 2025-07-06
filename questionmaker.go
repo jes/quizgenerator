@@ -29,6 +29,11 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 
 	prompt := qm.buildPrompt(req, batchSize)
 
+	// Log the request
+	if logger := GetGlobalLogger(); logger != nil {
+		logger.LogLLMRequest("QuestionMaker", prompt)
+	}
+
 	resp, err := qm.client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -97,6 +102,15 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate questions: %w", err)
+	}
+
+	// Log the response
+	if logger := GetGlobalLogger(); logger != nil {
+		responseText := ""
+		if len(resp.Choices) > 0 && len(resp.Choices[0].Message.ToolCalls) > 0 {
+			responseText = resp.Choices[0].Message.ToolCalls[0].Function.Arguments
+		}
+		logger.LogLLMResponse("QuestionMaker", responseText)
 	}
 
 	VerboseLog("Received response from GPT-4o with %d choices", len(resp.Choices))
