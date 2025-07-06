@@ -3,36 +3,34 @@
 
 <div class="question">
     <h2>{{.Question}}</h2>
-    
-    <div class="options">
-        {{range $index, $option := .Options}}
-        <div class="option">
-            <strong>{{index (list "A" "B" "C" "D") $index}}) {{$option}}</strong>
-        </div>
-        {{end}}
-    </div>
 </div>
 
 <form method="POST" action="/quiz/{{.QuizID}}/{{.QuestionNum}}">
-    {{range $playerIndex, $player := .Players}}
-    <div class="player-section">
-        <div class="player-name">{{$player.Name}}</div>
-        <div class="radio-group">
-            {{range $optionIndex, $option := $.Options}}
-            <div class="radio-option">
-                <input type="radio" id="player_{{$playerIndex}}_{{$optionIndex}}" 
-                       name="player_{{$playerIndex}}" value="{{$optionIndex}}" required>
-                <label for="player_{{$playerIndex}}_{{$optionIndex}}">
-                    {{index (list "A" "B" "C" "D") $optionIndex}}) {{$option}}
-                </label>
-            </div>
+    <div class="question-container">
+        {{range $playerIndex, $player := .Players}}
+        <div class="player-section">
+            {{ if (gt (len $.Players) 1) }}
+            <div class="player-name">{{$player.Name}}</div>
             {{end}}
+            <div class="answers">
+                {{range $optionIndex, $option := $.Options}}
+                <div class="answer-option">
+                    <input type="radio" id="player_{{$playerIndex}}_{{$optionIndex}}" 
+                           name="player_{{$playerIndex}}" value="{{$optionIndex}}" required>
+                    <label for="player_{{$playerIndex}}_{{$optionIndex}}">{{$option}}</label>
+                </div>
+                {{end}}
+            </div>
         </div>
+        {{end}}
     </div>
-    {{end}}
 
     <div style="text-align: center; margin-top: 30px;">
+        {{if (gt (len $.Players) 1)}}
         <button type="submit" class="btn">Submit Answers</button>
+        {{else}}
+        <button type="submit" class="btn">Submit Answer</button>
+        {{end}}
     </div>
 </form>
 {{end}} 
