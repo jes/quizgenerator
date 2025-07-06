@@ -198,13 +198,19 @@ func (qd *QuestionDedup) buildEvaluationCriteria() string {
    - Same question with minor rephrasing
    - Same topic with very similar answer choices
    - Questions that test the same knowledge point
-3. NOT DUPLICATES:
+3. ANSWER SPOILERS:
+   - If an earlier question's text or explanation reveals the answer to the new question
+   - If an earlier question's correct answer choice is mentioned in the new question's text
+   - If the new question becomes trivial because an earlier question already established the answer
+   - In these cases mark the question as a duplicate of the earlier question
+4. NOT DUPLICATES:
    - Different aspects of the same topic
    - Different difficulty levels
    - Different approaches to testing knowledge
    - Questions that test related but distinct concepts
 
 Consider both the question text and the answer choices when determining duplicates.
+Pay special attention to whether earlier questions spoil the answers to later questions.
 If the new question is a duplicate, provide the ID of the existing question it duplicates.
 
 Decide whether the new question is a duplicate of any existing question.`
