@@ -153,6 +153,10 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 
 				// Question passed both validation and deduplication
 				question.Status = StatusAccepted
+
+				// Randomize answer order to avoid position bias
+				qg.randomizeAnswerOrder(question)
+
 				select {
 				case questionChan <- question:
 					acceptedCount++
@@ -186,4 +190,34 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// randomizeAnswerOrder randomizes the order of answer options while preserving the correct answer
+func (qg *QuizGenerator) randomizeAnswerOrder(question *Question) {
+	if len(question.Options) != 4 {
+		// Don't randomize if we don't have exactly 4 options
+		return
+	}
+
+	// Create a permutation of indices [0,1,2,3]
+	indices := []int{0, 1, 2, 3}
+	for i := len(indices) - 1; i > 0; i-- {
+		j := rand.Intn(i + 1)
+		indices[i], indices[j] = indices[j], indices[i]
+	}
+
+	// Create new options and find new correct answer index
+	newOptions := make([]string, 4)
+	var newCorrectAnswer int
+
+	for i, oldIndex := range indices {
+		newOptions[i] = question.Options[oldIndex]
+		if oldIndex == question.CorrectAnswer {
+			newCorrectAnswer = i
+		}
+	}
+
+	// Update the question
+	question.Options = newOptions
+	question.CorrectAnswer = newCorrectAnswer
 }
