@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ func main() {
 		outputFile     = flag.String("output", "", "Output file for quiz JSON (default: stdout)")
 		apiKey         = flag.String("api-key", "", "OpenAI API key (or set OPENAI_API_KEY env var)")
 		playMode       = flag.Bool("play", false, "Play the quiz interactively")
+		numPlayers     = flag.Int("players", 1, "Number of players for multiplayer mode")
 		verbose        = flag.Bool("verbose", false, "Enable verbose debugging output")
 	)
 
@@ -54,7 +56,7 @@ func main() {
 	}
 
 	if *playMode {
-		playQuiz(generator, req)
+		playQuiz(generator, req, *numPlayers)
 		return
 	}
 
@@ -96,13 +98,40 @@ func main() {
 	}
 }
 
-func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.GenerationRequest) {
+// Player represents a player in the multiplayer quiz
+type Player struct {
+	Name    string
+	Score   int
+	Answers []int // Track answers for each question (0-3 for A-D)
+}
+
+func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.GenerationRequest, numPlayers int) {
 	fmt.Printf("🎯 Starting interactive quiz on: %s\n", req.Topic)
 	fmt.Printf("📝 Questions: %d, Difficulty: %s\n", req.NumQuestions, req.Difficulty)
+	fmt.Printf("👥 Players: %d\n", numPlayers)
 	if req.SourceMaterial != "" {
 		fmt.Printf("📚 Using source material: %d characters\n", len(req.SourceMaterial))
 	}
 	fmt.Println("⏳ Generating questions... (this may take a moment)")
+	fmt.Println()
+
+	// Initialize players
+	players := make([]*Player, numPlayers)
+	scanner := bufio.NewScanner(os.Stdin)
+
+	for i := 0; i < numPlayers; i++ {
+		fmt.Printf("Enter name for Player %d: ", i+1)
+		scanner.Scan()
+		name := strings.TrimSpace(scanner.Text())
+		if name == "" {
+			name = fmt.Sprintf("Player %d", i+1)
+		}
+		players[i] = &Player{
+			Name:    name,
+			Score:   0,
+			Answers: make([]int, 0, req.NumQuestions),
+		}
+	}
 	fmt.Println()
 
 	// Create context with timeout
@@ -116,8 +145,6 @@ func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.Generati
 	}
 
 	// Interactive quiz playing
-	scanner := bufio.NewScanner(os.Stdin)
-	correctAnswers := 0
 	questionNum := 0
 
 	for question := range questionChan {
@@ -132,39 +159,53 @@ func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.Generati
 		}
 		fmt.Println()
 
-		// Get user answer
-		var userAnswer string
-		for {
-			fmt.Print("Your answer (A/B/C/D): ")
-			scanner.Scan()
-			userAnswer = strings.ToUpper(strings.TrimSpace(scanner.Text()))
+		// Get answers from all players
+		playerAnswers := make([]int, numPlayers)
+		for i, player := range players {
+			var userAnswer string
+			for {
+				fmt.Printf("%s's answer (A/B/C/D): ", player.Name)
+				scanner.Scan()
+				userAnswer = strings.ToUpper(strings.TrimSpace(scanner.Text()))
 
-			if userAnswer == "A" || userAnswer == "B" || userAnswer == "C" || userAnswer == "D" {
-				break
+				if userAnswer == "A" || userAnswer == "B" || userAnswer == "C" || userAnswer == "D" {
+					break
+				}
+				fmt.Println("Please enter A, B, C, or D")
 			}
-			fmt.Println("Please enter A, B, C, or D")
+
+			playerIndex := strings.Index("ABCD", userAnswer)
+			playerAnswers[i] = playerIndex
+			player.Answers = append(player.Answers, playerIndex)
 		}
 
-		// Check answer
-		userIndex := strings.Index("ABCD", userAnswer)
-		isCorrect := userIndex == question.CorrectAnswer
-
+		// Check answers and update scores
 		fmt.Println()
-		if isCorrect {
-			fmt.Println("✅ Correct!")
-			correctAnswers++
-		} else {
-			correctOption := options[question.CorrectAnswer]
-			fmt.Printf("❌ Incorrect. The correct answer is %s) %s\n",
-				correctOption, question.Options[question.CorrectAnswer])
+		correctOption := options[question.CorrectAnswer]
+
+		for i, player := range players {
+			isCorrect := playerAnswers[i] == question.CorrectAnswer
+
+			if isCorrect {
+				fmt.Printf("✅ %s: Correct!\n", player.Name)
+				player.Score++
+			} else {
+				fmt.Printf("❌ %s: Incorrect. The correct answer is %s) %s\n",
+					player.Name, correctOption, question.Options[question.CorrectAnswer])
+			}
 		}
 
 		if question.Explanation != "" {
 			fmt.Printf("💡 Explanation: %s\n", question.Explanation)
 		}
 
-		fmt.Printf("Score: %d/%d (%.1f%%)\n", correctAnswers, questionNum,
-			float64(correctAnswers)/float64(questionNum)*100)
+		// Show current scores
+		fmt.Println("\n📊 Current Scores:")
+		for _, player := range players {
+			percentage := float64(player.Score) / float64(questionNum) * 100
+			fmt.Printf("  %s: %d/%d (%.1f%%)\n", player.Name, player.Score, questionNum, percentage)
+		}
+
 		fmt.Println()
 		fmt.Println(strings.Repeat("─", 50))
 		fmt.Println()
@@ -178,14 +219,54 @@ func playQuiz(generator *quizgenerator.QuizGenerator, req quizgenerator.Generati
 
 	// Final results
 	fmt.Println("🎉 Quiz completed!")
-	fmt.Printf("Final Score: %d/%d (%.1f%%)\n", correctAnswers, req.NumQuestions,
-		float64(correctAnswers)/float64(req.NumQuestions)*100)
+	fmt.Println("\n🏆 Final Results:")
 
-	if float64(correctAnswers)/float64(req.NumQuestions) >= 0.8 {
-		fmt.Println("🌟 Excellent work!")
-	} else if float64(correctAnswers)/float64(req.NumQuestions) >= 0.6 {
-		fmt.Println("👍 Good job!")
+	// Sort players by score (highest first)
+	sort.Slice(players, func(i, j int) bool {
+		return players[i].Score > players[j].Score
+	})
+
+	for i, player := range players {
+		percentage := float64(player.Score) / float64(req.NumQuestions) * 100
+		rank := i + 1
+
+		if rank == 1 {
+			fmt.Printf("🥇 %s: %d/%d (%.1f%%)\n", player.Name, player.Score, req.NumQuestions, percentage)
+		} else if rank == 2 && numPlayers > 1 {
+			fmt.Printf("🥈 %s: %d/%d (%.1f%%)\n", player.Name, player.Score, req.NumQuestions, percentage)
+		} else if rank == 3 && numPlayers > 2 {
+			fmt.Printf("🥉 %s: %d/%d (%.1f%%)\n", player.Name, player.Score, req.NumQuestions, percentage)
+		} else {
+			fmt.Printf("   %s: %d/%d (%.1f%%)\n", player.Name, player.Score, req.NumQuestions, percentage)
+		}
+	}
+
+	// Winner announcement
+	if numPlayers > 1 {
+		winner := players[0]
+		percentage := float64(winner.Score) / float64(req.NumQuestions) * 100
+
+		fmt.Printf("\n🎊 Winner: %s with %d/%d correct answers (%.1f%%)\n",
+			winner.Name, winner.Score, req.NumQuestions, percentage)
+
+		if percentage >= 0.8 {
+			fmt.Println("🌟 Outstanding performance!")
+		} else if percentage >= 0.6 {
+			fmt.Println("👍 Well done!")
+		} else {
+			fmt.Println("📚 Keep studying!")
+		}
 	} else {
-		fmt.Println("📚 Keep studying!")
+		// Single player mode - use original feedback
+		player := players[0]
+		percentage := float64(player.Score) / float64(req.NumQuestions) * 100
+
+		if percentage >= 0.8 {
+			fmt.Println("🌟 Excellent work!")
+		} else if percentage >= 0.6 {
+			fmt.Println("👍 Good job!")
+		} else {
+			fmt.Println("📚 Keep studying!")
+		}
 	}
 }
