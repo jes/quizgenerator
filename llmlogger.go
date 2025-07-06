@@ -98,9 +98,12 @@ func (ll *LLMLogger) Close() error {
 	defer ll.mu.Unlock()
 
 	if ll.file != nil {
-		ll.Logf("=== Quiz Generation Complete ===\n")
-		ll.Logf("Completed: %s\n", time.Now().Format(time.RFC3339))
-		ll.Logf("=============================\n")
+		// Write closing messages directly without using Logf to avoid deadlock
+		timestamp := time.Now().Format("15:04:05.000")
+		fmt.Fprintf(ll.file, "[%s] === Quiz Generation Complete ===\n", timestamp)
+		fmt.Fprintf(ll.file, "[%s] Completed: %s\n", timestamp, time.Now().Format(time.RFC3339))
+		fmt.Fprintf(ll.file, "[%s] ============================\n", timestamp)
+		ll.file.Sync()
 		return ll.file.Close()
 	}
 	return nil
