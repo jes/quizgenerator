@@ -25,6 +25,11 @@ func NewQuizGenerator(apiKey string) *QuizGenerator {
 	}
 }
 
+// SetLogger sets the logger for this quiz generator
+func (qg *QuizGenerator) SetLogger(logger *LLMLogger) {
+	qg.logger = logger
+}
+
 // GenerateQuiz generates a complete quiz with the specified number of questions
 func (qg *QuizGenerator) GenerateQuiz(ctx context.Context, req GenerationRequest) (*Quiz, error) {
 	VerboseLog("Starting quiz generation for topic: %s, target questions: %d", req.Topic, req.NumQuestions)

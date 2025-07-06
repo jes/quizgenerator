@@ -24,7 +24,6 @@ import (
 type Server struct {
 	db           *sql.DB
 	store        *sessions.CookieStore
-	generator    *quizgenerator.QuizGenerator
 	generating   map[string]bool
 	generatingMu sync.RWMutex
 	templates    map[string]*template.Template
@@ -81,9 +80,6 @@ func main() {
 
 	// Initialize session store
 	store := sessions.NewCookieStore([]byte("your-secret-key-here"))
-
-	// Initialize quiz generator
-	generator := quizgenerator.NewQuizGenerator(apiKey)
 
 	// Load templates with custom functions
 	funcMap := template.FuncMap{
@@ -152,7 +148,6 @@ func main() {
 	server := &Server{
 		db:         db,
 		store:      store,
-		generator:  generator,
 		generating: make(map[string]bool),
 		templates:  templates,
 	}
@@ -661,10 +656,25 @@ func (s *Server) generateQuiz(quizID, topic string, numQuestions int, sourceMate
 		Difficulty:     difficulty,
 	}
 
+	// Create a new QuizGenerator instance for this quiz
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	generator := quizgenerator.NewQuizGenerator(apiKey)
+
+	// Create logger with our specific quiz ID
+	logger, err := quizgenerator.NewLLMLogger(quizID, req)
+	if err != nil {
+		log.Printf("Failed to create logger for quiz %s: %v", quizID, err)
+		// Continue without logging rather than failing
+	} else {
+		// Set the logger on the generator so it uses our quiz ID
+		generator.SetLogger(logger)
+		defer logger.Close()
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	questionChan, err := s.generator.GenerateQuizStream(ctx, req)
+	questionChan, err := generator.GenerateQuizStream(ctx, req)
 	if err != nil {
 		log.Printf("Failed to generate quiz %s: %v", quizID, err)
 		return
