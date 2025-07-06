@@ -24,13 +24,13 @@ func NewQuestionMaker(apiKey string) *QuestionMaker {
 }
 
 // GenerateQuestions generates a batch of questions for the given topic
-func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRequest, batchSize int) ([]*Question, error) {
+func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRequest, batchSize int, logger *LLMLogger) ([]*Question, error) {
 	VerboseLog("Generating %d questions for topic: %s", batchSize, req.Topic)
 
 	prompt := qm.buildPrompt(req, batchSize)
 
 	// Log the request
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		logger.LogLLMRequest("QuestionMaker", prompt)
 	}
 
@@ -105,7 +105,7 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 	}
 
 	// Log the response
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		responseText := ""
 		if len(resp.Choices) > 0 && len(resp.Choices[0].Message.ToolCalls) > 0 {
 			responseText = resp.Choices[0].Message.ToolCalls[0].Function.Arguments

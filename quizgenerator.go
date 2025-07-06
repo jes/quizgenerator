@@ -12,6 +12,7 @@ type QuizGenerator struct {
 	checker *QuestionChecker
 	dedup   *QuestionDedup
 	pool    *QuestionPool
+	logger  *LLMLogger
 }
 
 // NewQuizGenerator creates a new quiz generator
@@ -35,7 +36,7 @@ func (qg *QuizGenerator) GenerateQuiz(ctx context.Context, req GenerationRequest
 		VerboseLog("Failed to create logger: %v", err)
 		// Continue without logging rather than failing
 	} else {
-		SetGlobalLogger(logger)
+		qg.logger = logger
 		defer logger.Close()
 	}
 
@@ -73,20 +74,22 @@ func (qg *QuizGenerator) GenerateQuiz(ctx context.Context, req GenerationRequest
 func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationRequest) (<-chan *Question, error) {
 	questionChan := make(chan *Question, req.NumQuestions)
 
-	// Create logger for this quiz
-	quizID := generateQuizID()
-	logger, err := NewLLMLogger(quizID, req)
-	if err != nil {
-		VerboseLog("Failed to create logger: %v", err)
-		// Continue without logging rather than failing
-	} else {
-		SetGlobalLogger(logger)
+	// Create logger for this quiz if not already set
+	if qg.logger == nil {
+		quizID := generateQuizID()
+		logger, err := NewLLMLogger(quizID, req)
+		if err != nil {
+			VerboseLog("Failed to create logger: %v", err)
+			// Continue without logging rather than failing
+		} else {
+			qg.logger = logger
+		}
 	}
 
 	go func() {
 		defer close(questionChan)
-		if logger != nil {
-			defer logger.Close()
+		if qg.logger != nil {
+			defer qg.logger.Close()
 		}
 
 		acceptedCount := 0
@@ -96,7 +99,7 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 			// Generate new questions if pool is empty
 			if qg.pool.IsEmpty() {
 				VerboseLog("Pool is empty, generating new batch of %d questions", batchSize)
-				questions, err := qg.maker.GenerateQuestions(ctx, req, batchSize)
+				questions, err := qg.maker.GenerateQuestions(ctx, req, batchSize, qg.logger)
 				if err != nil {
 					VerboseLog("Failed to generate questions: %v", err)
 					return
@@ -118,7 +121,7 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 				}
 
 				// Step 1: Validate the question
-				validation, err := qg.checker.CheckQuestion(ctx, question)
+				validation, err := qg.checker.CheckQuestion(ctx, question, qg.logger)
 				if err != nil {
 					VerboseLog("Error checking question %s: %v", question.ID, err)
 					// Put it back in pool for retry
@@ -136,7 +139,7 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 				}
 
 				// Step 2: Check for duplicates
-				dedupResult, err := qg.dedup.CheckDuplicate(ctx, question)
+				dedupResult, err := qg.dedup.CheckDuplicate(ctx, question, qg.logger)
 				if err != nil {
 					VerboseLog("Error checking duplicate for question %s: %v", question.ID, err)
 					// Put it back in pool for retry

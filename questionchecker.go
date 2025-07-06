@@ -22,13 +22,13 @@ func NewQuestionChecker(apiKey string) *QuestionChecker {
 }
 
 // CheckQuestion validates a single question and returns the validation result
-func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question) (*ValidationResult, error) {
+func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question, logger *LLMLogger) (*ValidationResult, error) {
 	VerboseLog("Checking question: %s", question.ID)
 
 	prompt := qc.buildPrompt(question)
 
 	// Log the request
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		logger.LogLLMRequest("QuestionChecker", prompt)
 	}
 
@@ -109,7 +109,7 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 	}
 
 	// Log the response
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		responseText := ""
 		if len(resp.Choices) > 0 && len(resp.Choices[0].Message.ToolCalls) > 0 {
 			responseText = resp.Choices[0].Message.ToolCalls[0].Function.Arguments
@@ -166,7 +166,7 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 	}
 
 	// Log the result
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		logger.LogQuestionResult(question.ID, string(result.Action), result.Reason)
 	}
 

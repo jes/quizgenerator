@@ -31,7 +31,7 @@ type DedupResult struct {
 }
 
 // CheckDuplicate checks if a question is a duplicate of any previously accepted question
-func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question) (*DedupResult, error) {
+func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question, logger *LLMLogger) (*DedupResult, error) {
 	if len(qd.cache) == 0 {
 		// First question, always accept
 		qd.cache[question.ID] = question
@@ -78,7 +78,7 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 	prompt := existingQuestions.String() + newQuestion.String() + qd.buildEvaluationCriteria()
 
 	// Log the request
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		logger.LogLLMRequest("QuestionDedup", prompt)
 	}
 
@@ -137,7 +137,7 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 	}
 
 	// Log the response
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		responseText := ""
 		if len(resp.Choices) > 0 && len(resp.Choices[0].Message.ToolCalls) > 0 {
 			responseText = resp.Choices[0].Message.ToolCalls[0].Function.Arguments
@@ -181,7 +181,7 @@ func (qd *QuestionDedup) CheckDuplicate(ctx context.Context, question *Question)
 	}
 
 	// Log the result
-	if logger := GetGlobalLogger(); logger != nil {
+	if logger != nil {
 		logger.LogDedupResult(question.ID, result.IsDuplicate, result.Reason, result.DuplicateID)
 	}
 
