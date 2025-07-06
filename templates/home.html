@@ -34,11 +34,13 @@
                     <span style="color: #ffc107;">⏳ Generating...</span>
                 {{else if eq .Status "ready"}}
                     <span style="color: #28a745;">✅ Ready to play!</span>
+                {{else if eq .Status "completed"}}
+                    <span style="color: #17a2b8;">🏁 Completed</span>
                 {{else}}
                     <span style="color: #6c757d;">{{.Status}}</span>
                 {{end}}
             </p>
-            {{if eq .Status "ready"}}
+            {{if or (eq .Status "ready") (eq .Status "completed")}}
             <div style="text-align: center; margin-top: 15px;">
                 <a href="/quiz/{{.ID}}" class="btn">Play Quiz</a>
             </div>

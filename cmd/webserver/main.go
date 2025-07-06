@@ -431,16 +431,17 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 		return
 	}
 
-	// Check if quiz is ready
-	var status string
-	err := s.db.QueryRow("SELECT status FROM quizzes WHERE id = ?", quizID).Scan(&status)
+	// Check if this specific question exists
+	var questionExists bool
+	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM questions WHERE quiz_id = ? AND question_num = ?)", quizID, questionNum).Scan(&questionExists)
 	if err != nil {
-		http.NotFound(w, r)
+		log.Printf("Failed to check if question exists: %v", err)
+		http.Error(w, "Failed to check question", http.StatusInternalServerError)
 		return
 	}
 
-	if status == "generating" {
-		// Show generating page with auto-refresh
+	if !questionExists {
+		// Show generating page with auto-refresh for this specific question
 		err := s.templates["generating"].ExecuteTemplate(w, "base.html", map[string]interface{}{
 			"QuizID":      quizID,
 			"QuestionNum": questionNum,
@@ -670,6 +671,8 @@ func (s *Server) generateQuiz(quizID, topic string, numQuestions int, sourceMate
 	}
 
 	questionNum := 1
+	firstQuestionGenerated := false
+
 	for question := range questionChan {
 		// Store question in database
 		optionsJSON, _ := json.Marshal(question.Options)
@@ -682,16 +685,27 @@ func (s *Server) generateQuiz(quizID, topic string, numQuestions int, sourceMate
 			continue
 		}
 
+		// Mark quiz as ready as soon as the first question is generated
+		if !firstQuestionGenerated {
+			_, err = s.db.Exec("UPDATE quizzes SET status = 'ready' WHERE id = ?", quizID)
+			if err != nil {
+				log.Printf("Failed to update quiz status %s: %v", quizID, err)
+			} else {
+				log.Printf("Quiz %s marked as ready after first question", quizID)
+			}
+			firstQuestionGenerated = true
+		}
+
 		questionNum++
 		if questionNum > numQuestions {
 			break
 		}
 	}
 
-	// Mark quiz as ready
-	_, err = s.db.Exec("UPDATE quizzes SET status = 'ready' WHERE id = ?", quizID)
+	// Mark quiz as completed when all questions are done
+	_, err = s.db.Exec("UPDATE quizzes SET status = 'completed' WHERE id = ?", quizID)
 	if err != nil {
-		log.Printf("Failed to update quiz status %s: %v", quizID, err)
+		log.Printf("Failed to update quiz status to completed %s: %v", quizID, err)
 	}
 }
 

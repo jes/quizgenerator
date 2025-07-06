@@ -10,7 +10,8 @@
     {{end}}
     <p><strong>Status:</strong> 
         {{if eq .Status "generating"}}
-            <span style="color: #ffc107;">⏳ Generating...</span>
+            <span style="color: #ffc107;">⏳ Generating questions...</span>
+            <br><small>You can set up players while questions are being generated!</small>
         {{else if eq .Status "ready"}}
             <span style="color: #28a745;">✅ Ready to play!</span>
         {{else}}
@@ -19,20 +20,6 @@
     </p>
 </div>
 
-{{if eq .Status "generating"}}
-<div class="loading">
-    <div class="spinner"></div>
-    <p>AI is generating your quiz questions...</p>
-    <p>This usually takes 30-60 seconds.</p>
-    <p><small>This page will automatically refresh when ready.</small></p>
-</div>
-
-<script>
-    setTimeout(function() {
-        window.location.reload();
-    }, 1000);
-</script>
-{{else}}
 <form method="POST" action="/quiz/{{.ID}}">
     <div class="form-group">
         <label for="num_players">Number of Players</label>
@@ -69,5 +56,4 @@ function updatePlayerFields() {
 // Initialize player fields on page load
 updatePlayerFields();
 </script>
-{{end}}
 {{end}} 
