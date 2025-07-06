@@ -23,7 +23,23 @@ func NewQuestionChecker(apiKey string) *QuestionChecker {
 
 // CheckQuestion validates a single question and returns the validation result
 func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question, logger *LLMLogger) (*ValidationResult, error) {
-	VerboseLog("Checking question: %s", question.ID)
+	VerboseLog("Checking question: %s (revision count: %d)", question.ID, question.RevisionCount)
+
+	// If question has been revised 3 times, reject it to prevent infinite loops
+	if question.RevisionCount >= 3 {
+		result := &ValidationResult{
+			QuestionID: question.ID,
+			Action:     ActionReject,
+			Reason:     fmt.Sprintf("Question rejected after %d revision attempts to prevent infinite loop", question.RevisionCount),
+		}
+
+		if logger != nil {
+			logger.LogQuestionResult(question.ID, string(result.Action), result.Reason)
+		}
+
+		VerboseLog("Question %s: %s - %s", question.ID, result.Action, result.Reason)
+		return result, nil
+	}
 
 	prompt := qc.buildPrompt(question)
 
@@ -161,6 +177,7 @@ func (qc *QuestionChecker) CheckQuestion(ctx context.Context, question *Question
 			Explanation:   toolArgs.RevisedQuestion.Explanation,
 			Topic:         question.Topic,
 			Status:        StatusRevised,
+			RevisionCount: question.RevisionCount + 1, // Increment revision counter
 		}
 		result.RevisedQuestion = revised
 	}
@@ -178,6 +195,7 @@ func (qc *QuestionChecker) buildPrompt(question *Question) string {
 	var sb strings.Builder
 
 	sb.WriteString("Evaluate the following quiz question:\n\n")
+	sb.WriteString(fmt.Sprintf("Quiz Topic: %s\n\n", question.Topic))
 	sb.WriteString(fmt.Sprintf("Question: %s\n\n", question.Text))
 
 	sb.WriteString("Options:\n")
@@ -193,15 +211,22 @@ func (qc *QuestionChecker) buildPrompt(question *Question) string {
 	sb.WriteString(fmt.Sprintf("Explanation: %s\n\n", question.Explanation))
 
 	sb.WriteString("CRITICAL EVALUATION CRITERIA:\n")
-	sb.WriteString("🚨 AUTOMATIC REJECTION: If the correct answer appears in the question text, REJECT immediately.\n")
-	sb.WriteString("🚨 AUTOMATIC REJECTION: If the question text contains obvious clues that give away the answer, REJECT immediately.\n")
+	sb.WriteString("🚨 AUTOMATIC REJECTION: If the correct answer appears in the question text, REJECT immediately or REVISE to improve it.\n")
+	sb.WriteString("🚨 AUTOMATIC REJECTION: If the question text contains obvious clues that give away the answer, REJECT immediately or REVISE to improve it.\n")
+	sb.WriteString("🚨 AUTOMATIC REJECTION: If the question is not relevant to the quiz topic, REJECT immediately.\n")
 
 	sb.WriteString("Additional evaluation criteria:\n")
-	sb.WriteString("1. Is the question clear and unambiguous?\n")
-	sb.WriteString("2. Is the correct answer actually correct?\n")
-	sb.WriteString("3. Are all incorrect options plausible but clearly wrong?\n")
-	sb.WriteString("4. Does the question test understanding rather than just memorization?\n")
-	sb.WriteString("5. Does the explanation provide meaningful context or reasoning for WHY the answer is correct?\n\n")
+	sb.WriteString("1. Is the question relevant to the quiz topic?\n")
+	sb.WriteString("2. Is the question clear and unambiguous?\n")
+	sb.WriteString("3. Is the correct answer actually correct?\n")
+	sb.WriteString("4. Are all incorrect options plausible but clearly wrong?\n")
+	sb.WriteString("5. Does the question test understanding rather than just memorization?\n")
+	sb.WriteString("6. Does the explanation provide meaningful context or reasoning for WHY the answer is correct?\n\n")
+
+	sb.WriteString("Topic relevance check:\n")
+	sb.WriteString("- The question must be directly related to the quiz topic\n")
+	sb.WriteString("- If the question is about a different subject or person, it should be rejected\n")
+	sb.WriteString("- The question should test knowledge about the specific topic, not general knowledge\n\n")
 
 	sb.WriteString("Explanation quality check:\n")
 	sb.WriteString("- The explanation should explain WHY the answer is correct, not just restate what the answer is\n")
@@ -210,9 +235,13 @@ func (qc *QuestionChecker) buildPrompt(question *Question) string {
 	sb.WriteString("- Avoid explanations that just repeat the answer in different words\n\n")
 
 	sb.WriteString("Decision guidelines:\n")
-	sb.WriteString("- REJECT: The question has fundamental problems (especially if answer is in question text or explanation is poor)\n")
-	sb.WriteString("- REVISE: The question has potential but needs improvements\n")
+	sb.WriteString("- REJECT: The question has fundamental problems (especially if answer is in question text or not relevant to topic or obvious given the topic)\n")
+	sb.WriteString("- REVISE: If the question has potential but needs improvements\n")
 	sb.WriteString("- ACCEPT: The question is good as-is (only if it passes all criteria)\n\n")
+
+	sb.WriteString("IMPORTANT: Only revise explanations if they are spectacularly bad (e.g., missing acronym definitions, completely wrong information, or no explanation at all).\n")
+	sb.WriteString("For mediocre or basic explanations, ACCEPT the question rather than rejecting it. A good question with a basic explanation is better than no question at all.\n")
+	sb.WriteString("Only reject questions if they have fundamental structural problems (answer in question text, obvious clues, or not relevant to topic or obvious given the topic).\n")
 
 	sb.WriteString("If you choose to revise, provide a complete revised version of the question.")
 

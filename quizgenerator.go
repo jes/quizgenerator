@@ -139,6 +139,9 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 					if validation.Action == ActionRevise && validation.RevisedQuestion != nil {
 						// Add revised question back to pool
 						qg.pool.Add(validation.RevisedQuestion)
+						VerboseLog("Question %s revised (attempt %d), added back to pool", question.ID, validation.RevisedQuestion.RevisionCount)
+					} else if validation.Action == ActionReject {
+						VerboseLog("Question %s rejected: %s", question.ID, validation.Reason)
 					}
 					continue
 				}

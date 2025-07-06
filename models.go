@@ -12,6 +12,7 @@ type Question struct {
 	Topic         string         `json:"topic"`
 	CreatedAt     time.Time      `json:"created_at"`
 	Status        QuestionStatus `json:"status"`
+	RevisionCount int            `json:"revision_count"` // Number of times this question has been revised
 }
 
 // QuestionStatus represents the state of a question in the pipeline

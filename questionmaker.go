@@ -176,6 +176,7 @@ func (qm *QuestionMaker) GenerateQuestions(ctx context.Context, req GenerationRe
 			Explanation:   q.Explanation,
 			Topic:         req.Topic,
 			Status:        StatusTentative,
+			RevisionCount: 0,
 		}
 		questions = append(questions, question)
 	}
