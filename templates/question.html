@@ -33,4 +33,46 @@
         {{end}}
     </div>
 </form>
+
+<script>
+// Add click handlers to make entire answer options clickable
+document.addEventListener('DOMContentLoaded', function() {
+    const answerOptions = document.querySelectorAll('.answer-option');
+    
+    answerOptions.forEach(function(option) {
+        option.addEventListener('click', function(e) {
+            // Don't trigger if clicking directly on the radio button
+            if (e.target.type === 'radio') return;
+            
+            // Find the radio button within this option and check it
+            const radio = this.querySelector('input[type="radio"]');
+            if (radio) {
+                radio.checked = true;
+                
+                // Remove selected class from all options in this group
+                const name = radio.name;
+                document.querySelectorAll(`input[name="${name}"]`).forEach(function(r) {
+                    r.closest('.answer-option').classList.remove('selected');
+                });
+                
+                // Add selected class to this option
+                this.classList.add('selected');
+            }
+        });
+    });
+    
+    // Handle radio button changes to update visual state
+    document.querySelectorAll('input[type="radio"]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            const name = this.name;
+            document.querySelectorAll(`input[name="${name}"]`).forEach(function(r) {
+                r.closest('.answer-option').classList.remove('selected');
+            });
+            if (this.checked) {
+                this.closest('.answer-option').classList.add('selected');
+            }
+        });
+    });
+});
+</script>
 {{end}} 

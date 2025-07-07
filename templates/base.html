@@ -156,6 +156,39 @@
             border-left-color: #dc3545;
             background-color: #f8d7da;
         }
+        .answer-option {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            margin: 10px 0;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .answer-option:hover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+        .answer-option input[type="radio"] {
+            margin-right: 12px;
+            cursor: pointer;
+            transform: scale(1.2);
+        }
+        .answer-option input[type="radio"]:checked + label {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .answer-option.selected {
+            border-color: #007bff;
+            background-color: #e7f3ff;
+        }
+        .answer-option label {
+            cursor: pointer;
+            width: 100%;
+            margin: 0;
+        }
     </style>
 </head>
 <body>
