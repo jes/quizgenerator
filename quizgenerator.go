@@ -103,6 +103,10 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 			// Generate new questions if pool is empty
 			if qg.pool.IsEmpty() {
 				questionsRequired := req.NumQuestions - acceptedCount
+				if questionsRequired < 3 {
+					questionsRequired = 3
+				}
+
 				VerboseLog("Pool is empty, generating new batch of %d questions", questionsRequired)
 				questions, err := qg.maker.GenerateQuestions(ctx, req, questionsRequired, qg.logger)
 				if err != nil {
