@@ -98,16 +98,27 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 		}
 
 		acceptedCount := 0
+		totalQuestionsRequested := 0
+		maxQuestionsToRequest := req.NumQuestions * 3
 
 		for acceptedCount < req.NumQuestions {
+			// Check if we've already requested 3x the target number of questions
+			if totalQuestionsRequested >= maxQuestionsToRequest {
+				VerboseLog("Already requested %d questions (max: %d), stopping generation. Generated %d accepted questions.",
+					totalQuestionsRequested, maxQuestionsToRequest, acceptedCount)
+				return
+			}
+
 			// Generate new questions if pool is empty
 			if qg.pool.IsEmpty() {
 				questionsRequired := req.NumQuestions - acceptedCount
 				if questionsRequired < 3 {
 					questionsRequired = 3
 				}
+				totalQuestionsRequested += questionsRequired
 
-				VerboseLog("Pool is empty, generating new batch of %d questions", questionsRequired)
+				VerboseLog("Pool is empty, generating new batch of %d questions (requested so far: %d/%d)",
+					questionsRequired, totalQuestionsRequested, maxQuestionsToRequest)
 				questions, err := qg.maker.GenerateQuestions(ctx, req, questionsRequired, qg.logger)
 				if err != nil {
 					VerboseLog("Failed to generate questions: %v", err)
@@ -119,7 +130,8 @@ func (qg *QuizGenerator) GenerateQuizStream(ctx context.Context, req GenerationR
 					qg.pool.Add(question)
 				}
 
-				VerboseLog("Added %d questions to pool", len(questions))
+				VerboseLog("Added %d questions to pool (total requested: %d/%d)",
+					len(questions), totalQuestionsRequested, maxQuestionsToRequest)
 			}
 
 			// Process one question at a time and yield accepted ones

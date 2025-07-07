@@ -376,16 +376,35 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 	}
 
 	if !questionExists {
-		// Show generating page with auto-refresh for this specific question
-		err := s.templates["generating"].ExecuteTemplate(w, "base.html", map[string]interface{}{
-			"QuizID":      quizID,
-			"QuestionNum": questionNum,
-		})
+		// Check if the quiz is still generating or if we've reached the end
+		quiz, err := s.db.GetQuiz(quizID)
 		if err != nil {
-			log.Printf("Template error in generating: %v", err)
-			http.Error(w, "Template error", http.StatusInternalServerError)
+			log.Printf("Failed to get quiz: %v", err)
+			http.Error(w, "Failed to get quiz", http.StatusInternalServerError)
 			return
 		}
+
+		// If quiz is still generating, show generating page
+		if quiz.Status == "generating" || quiz.Status == "ready" {
+			err := s.templates["generating"].ExecuteTemplate(w, "base.html", map[string]interface{}{
+				"QuizID":      quizID,
+				"QuestionNum": questionNum,
+			})
+			if err != nil {
+				log.Printf("Template error in generating: %v", err)
+				http.Error(w, "Template error", http.StatusInternalServerError)
+				return
+			}
+			return
+		}
+
+		// If quiz is completed but this question doesn't exist, redirect to results
+		// This handles the case where we truncated the quiz
+		log.Printf("Question %d for quiz %s doesn't exist, quiz is completed, redirecting to results", questionNum, quizID)
+		gameSession.Completed = true
+		session.Values["game"] = gameSession
+		session.Save(r, w)
+		http.Redirect(w, r, fmt.Sprintf("/quiz/%s/results", quizID), http.StatusSeeOther)
 		return
 	}
 
@@ -452,14 +471,14 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 		}
 	}
 
-	// Check if quiz is complete
-	numQuestions, err := s.db.GetQuizNumQuestions(quizID)
+	// Check if quiz is complete using actual number of questions
+	actualQuestions, err := s.db.GetQuizActualQuestionCount(quizID)
 	if err != nil {
 		http.Error(w, "Failed to get quiz info", http.StatusInternalServerError)
 		return
 	}
 
-	if questionNum >= numQuestions {
+	if questionNum >= actualQuestions {
 		gameSession.Completed = true
 		session.Values["game"] = gameSession
 		session.Save(r, w)

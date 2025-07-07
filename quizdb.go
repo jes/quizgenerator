@@ -257,7 +257,21 @@ func JSONToOptions(optionsJSON string) ([]string, error) {
 	return options, nil
 }
 
+// UpdateQuizNumQuestions updates the actual number of questions for a quiz
+func (db *DB) UpdateQuizNumQuestions(id string, numQuestions int) error {
+	_, err := db.db.Exec("UPDATE quizzes SET num_questions = ? WHERE id = ?", numQuestions, id)
+	if err != nil {
+		return fmt.Errorf("failed to update quiz num questions: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) GenerateQuiz(quizID, topic string, numQuestions int, sourceMaterial, difficulty string) {
+	// Ensure at least 3 questions are generated
+	if numQuestions < 3 {
+		numQuestions = 3
+	}
+
 	req := GenerationRequest{
 		Topic:          topic,
 		NumQuestions:   numQuestions,
@@ -326,13 +340,33 @@ func (db *DB) GenerateQuiz(quizID, topic string, numQuestions int, sourceMateria
 		}
 
 		questionNum++
+
+		// Stop if we've reached the target number of questions
 		if questionNum > numQuestions {
 			break
 		}
+	}
+
+	// Update the quiz with the actual number of questions generated
+	actualQuestions := questionNum - 1
+	if err := db.UpdateQuizNumQuestions(quizID, actualQuestions); err != nil {
+		log.Printf("Failed to update quiz num questions %s: %v", quizID, err)
 	}
 
 	// Mark quiz as completed when all questions are done
 	if err := db.UpdateQuizStatus(quizID, "completed"); err != nil {
 		log.Printf("Failed to update quiz status to completed %s: %v", quizID, err)
 	}
+
+	log.Printf("Quiz %s completed with %d questions (requested: %d)", quizID, actualQuestions, numQuestions)
+}
+
+// GetQuizActualQuestionCount gets the actual number of questions that exist for a quiz
+func (db *DB) GetQuizActualQuestionCount(quizID string) (int, error) {
+	var count int
+	err := db.db.QueryRow("SELECT COUNT(*) FROM questions WHERE quiz_id = ?", quizID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get quiz actual question count: %w", err)
+	}
+	return count, nil
 }
