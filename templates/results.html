@@ -43,15 +43,6 @@
             <strong>💡 Explanation:</strong> {{$question.Explanation}}
         </div>
         {{end}}
-
-        <div style="margin-top: 15px;">
-            <strong>Running Scores:</strong>
-            {{range $pIndex, $player := $.Game.Players}}
-            <div>
-                {{$player.Name}}: {{index $.Game.Scores $pIndex}}/{{add $qIndex 1}}
-            </div>
-            {{end}}
-        </div>
     </div>
     {{end}}
 </div>
