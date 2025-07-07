@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/gob"
 	"fmt"
 	"html/template"
@@ -222,7 +221,7 @@ func (s *Server) handleNewQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start generating in background
-	go s.generateQuiz(quizID, topic, numQuestions, sourceMaterial, difficulty)
+	go s.db.GenerateQuiz(quizID, topic, numQuestions, sourceMaterial, difficulty)
 
 	// Redirect to quiz page
 	http.Redirect(w, r, "/quiz/"+quizID, http.StatusSeeOther)
@@ -536,86 +535,6 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, quizID st
 		log.Printf("Template error in results: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
-	}
-}
-
-func (s *Server) generateQuiz(quizID, topic string, numQuestions int, sourceMaterial, difficulty string) {
-	req := quizgenerator.GenerationRequest{
-		Topic:          topic,
-		NumQuestions:   numQuestions,
-		SourceMaterial: sourceMaterial,
-		Difficulty:     difficulty,
-	}
-
-	// Create a new QuizGenerator instance for this quiz
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	generator := quizgenerator.NewQuizGenerator(apiKey)
-
-	// Create logger with our specific quiz ID
-	logger, err := quizgenerator.NewLLMLogger(quizID, req)
-	if err != nil {
-		log.Printf("Failed to create logger for quiz %s: %v", quizID, err)
-		// Continue without logging rather than failing
-	} else {
-		// Set the logger on the generator so it uses our quiz ID
-		generator.SetLogger(logger)
-		defer logger.Close()
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	questionChan, err := generator.GenerateQuizStream(ctx, req)
-	if err != nil {
-		log.Printf("Failed to generate quiz %s: %v", quizID, err)
-		return
-	}
-
-	questionNum := 1
-	firstQuestionGenerated := false
-
-	for question := range questionChan {
-		// Store question in database
-		optionsJSON, err := quizgenerator.OptionsToJSON(question.Options)
-		if err != nil {
-			log.Printf("Failed to marshal options for question %s: %v", question.ID, err)
-			continue
-		}
-
-		dbQuestion := &quizgenerator.DBQuestion{
-			ID:            question.ID,
-			QuizID:        quizID,
-			QuestionNum:   questionNum,
-			Text:          question.Text,
-			Options:       optionsJSON,
-			CorrectAnswer: question.CorrectAnswer,
-			Explanation:   question.Explanation,
-		}
-
-		if err := s.db.CreateQuestion(dbQuestion); err != nil {
-			log.Printf("Failed to store question %s: %v", question.ID, err)
-			continue
-		}
-
-		// Mark quiz as ready as soon as the first question is generated
-		if !firstQuestionGenerated {
-			if err := s.db.UpdateQuizStatus(quizID, "ready"); err != nil {
-				log.Printf("Failed to update quiz status %s: %v", quizID, err)
-			} else {
-				log.Printf("Quiz %s marked as ready after first question", quizID)
-			}
-			firstQuestionGenerated = true
-		}
-
-		questionNum++
-		if questionNum > numQuestions {
-			break
-		}
-	}
-
-	// Mark quiz as completed when all questions are done
-	if err := s.db.UpdateQuizStatus(quizID, "completed"); err != nil {
-		log.Printf("Failed to update quiz status to completed %s: %v", quizID, err)
 	}
 }
 

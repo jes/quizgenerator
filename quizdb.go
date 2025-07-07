@@ -1,9 +1,12 @@
 package quizgenerator
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -252,4 +255,84 @@ func JSONToOptions(optionsJSON string) ([]string, error) {
 		return nil, fmt.Errorf("failed to unmarshal options: %w", err)
 	}
 	return options, nil
+}
+
+func (db *DB) GenerateQuiz(quizID, topic string, numQuestions int, sourceMaterial, difficulty string) {
+	req := GenerationRequest{
+		Topic:          topic,
+		NumQuestions:   numQuestions,
+		SourceMaterial: sourceMaterial,
+		Difficulty:     difficulty,
+	}
+
+	// Create a new QuizGenerator instance for this quiz
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	generator := NewQuizGenerator(apiKey)
+
+	// Create logger with our specific quiz ID
+	logger, err := NewLLMLogger(quizID, req)
+	if err != nil {
+		log.Printf("Failed to create logger for quiz %s: %v", quizID, err)
+		// Continue without logging rather than failing
+	} else {
+		// Set the logger on the generator so it uses our quiz ID
+		generator.SetLogger(logger)
+		defer logger.Close()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	questionChan, err := generator.GenerateQuizStream(ctx, req)
+	if err != nil {
+		log.Printf("Failed to generate quiz %s: %v", quizID, err)
+		return
+	}
+
+	questionNum := 1
+	firstQuestionGenerated := false
+
+	for question := range questionChan {
+		// Store question in database
+		optionsJSON, err := OptionsToJSON(question.Options)
+		if err != nil {
+			log.Printf("Failed to marshal options for question %s: %v", question.ID, err)
+			continue
+		}
+
+		dbQuestion := &DBQuestion{
+			ID:            question.ID,
+			QuizID:        quizID,
+			QuestionNum:   questionNum,
+			Text:          question.Text,
+			Options:       optionsJSON,
+			CorrectAnswer: question.CorrectAnswer,
+			Explanation:   question.Explanation,
+		}
+
+		if err := db.CreateQuestion(dbQuestion); err != nil {
+			log.Printf("Failed to store question %s: %v", question.ID, err)
+			continue
+		}
+
+		// Mark quiz as ready as soon as the first question is generated
+		if !firstQuestionGenerated {
+			if err := db.UpdateQuizStatus(quizID, "ready"); err != nil {
+				log.Printf("Failed to update quiz status %s: %v", quizID, err)
+			} else {
+				log.Printf("Quiz %s marked as ready after first question", quizID)
+			}
+			firstQuestionGenerated = true
+		}
+
+		questionNum++
+		if questionNum > numQuestions {
+			break
+		}
+	}
+
+	// Mark quiz as completed when all questions are done
+	if err := db.UpdateQuizStatus(quizID, "completed"); err != nil {
+		log.Printf("Failed to update quiz status to completed %s: %v", quizID, err)
+	}
 }
