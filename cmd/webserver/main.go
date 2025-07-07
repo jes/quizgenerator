@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"quizgenerator"
@@ -19,11 +18,9 @@ import (
 )
 
 type Server struct {
-	db           *quizgenerator.DB
-	store        *sessions.CookieStore
-	generating   map[string]bool
-	generatingMu sync.RWMutex
-	templates    map[string]*template.Template
+	db        *quizgenerator.DB
+	store     *sessions.CookieStore
+	templates map[string]*template.Template
 }
 
 type GameSession struct {
@@ -126,17 +123,10 @@ func main() {
 		templates[tmpl.name] = template.Must(template.New(tmpl.name).Funcs(funcMap).ParseFiles("templates/base.html", tmpl.file))
 	}
 
-	// Debug: list all loaded templates
-	log.Printf("Loaded templates:")
-	for _, tmpl := range templates {
-		log.Printf("  - %s", tmpl.Name())
-	}
-
 	server := &Server{
-		db:         db,
-		store:      store,
-		generating: make(map[string]bool),
-		templates:  templates,
+		db:        db,
+		store:     store,
+		templates: templates,
 	}
 
 	// Setup routes
@@ -550,16 +540,6 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, quizID st
 }
 
 func (s *Server) generateQuiz(quizID, topic string, numQuestions int, sourceMaterial, difficulty string) {
-	s.generatingMu.Lock()
-	s.generating[quizID] = true
-	s.generatingMu.Unlock()
-
-	defer func() {
-		s.generatingMu.Lock()
-		delete(s.generating, quizID)
-		s.generatingMu.Unlock()
-	}()
-
 	req := quizgenerator.GenerationRequest{
 		Topic:          topic,
 		NumQuestions:   numQuestions,
