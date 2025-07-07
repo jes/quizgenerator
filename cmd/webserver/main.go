@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/gob"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -18,25 +16,14 @@ import (
 	"quizgenerator"
 
 	"github.com/gorilla/sessions"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type Server struct {
-	db           *sql.DB
+	db           *quizgenerator.DB
 	store        *sessions.CookieStore
 	generating   map[string]bool
 	generatingMu sync.RWMutex
 	templates    map[string]*template.Template
-}
-
-type Quiz struct {
-	ID             string    `json:"id"`
-	Topic          string    `json:"topic"`
-	NumQuestions   int       `json:"num_questions"`
-	SourceMaterial string    `json:"source_material"`
-	Difficulty     string    `json:"difficulty"`
-	CreatedAt      time.Time `json:"created_at"`
-	Status         string    `json:"status"` // "generating", "ready", "completed"
 }
 
 type GameSession struct {
@@ -67,14 +54,14 @@ func main() {
 	}
 
 	// Initialize database
-	db, err := sql.Open("sqlite3", "./quiz.db")
+	db, err := quizgenerator.OpenDB("./quiz.db")
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer db.CloseDB()
 
 	// Create tables
-	if err := createTables(db); err != nil {
+	if err := db.CreateTables(); err != nil {
 		log.Fatalf("Failed to create tables: %v", err)
 	}
 
@@ -166,37 +153,6 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
-func createTables(db *sql.DB) error {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS quizzes (
-			id TEXT PRIMARY KEY,
-			topic TEXT NOT NULL,
-			num_questions INTEGER NOT NULL,
-			source_material TEXT,
-			difficulty TEXT NOT NULL,
-			created_at DATETIME NOT NULL,
-			status TEXT NOT NULL DEFAULT 'generating'
-		)`,
-		`CREATE TABLE IF NOT EXISTS questions (
-			id TEXT PRIMARY KEY,
-			quiz_id TEXT NOT NULL,
-			question_num INTEGER NOT NULL,
-			text TEXT NOT NULL,
-			options TEXT NOT NULL,
-			correct_answer INTEGER NOT NULL,
-			explanation TEXT,
-			FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
-		)`,
-	}
-
-	for _, query := range queries {
-		if _, err := db.Exec(query); err != nil {
-			return fmt.Errorf("failed to execute %s: %w", query, err)
-		}
-	}
-	return nil
-}
-
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -204,25 +160,11 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all quizzes from database
-	rows, err := s.db.Query(
-		"SELECT id, topic, num_questions, source_material, difficulty, created_at, status FROM quizzes ORDER BY created_at DESC LIMIT 10",
-	)
+	quizzes, err := s.db.GetQuizzes(10)
 	if err != nil {
 		log.Printf("Failed to get quizzes: %v", err)
 		http.Error(w, "Failed to get quizzes", http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-
-	var quizzes []Quiz
-	for rows.Next() {
-		var quiz Quiz
-		err := rows.Scan(&quiz.ID, &quiz.Topic, &quiz.NumQuestions, &quiz.SourceMaterial, &quiz.Difficulty, &quiz.CreatedAt, &quiz.Status)
-		if err != nil {
-			log.Printf("Failed to scan quiz: %v", err)
-			continue
-		}
-		quizzes = append(quizzes, quiz)
 	}
 
 	err = s.templates["home"].ExecuteTemplate(w, "base.html", map[string]interface{}{
@@ -274,11 +216,17 @@ func (s *Server) handleNewQuiz(w http.ResponseWriter, r *http.Request) {
 
 	// Create quiz in database
 	quizID := generateQuizID()
-	_, err = s.db.Exec(
-		"INSERT INTO quizzes (id, topic, num_questions, source_material, difficulty, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		quizID, topic, numQuestions, sourceMaterial, difficulty, time.Now(), "generating",
-	)
-	if err != nil {
+	quiz := &quizgenerator.DBQuiz{
+		ID:             quizID,
+		Topic:          topic,
+		NumQuestions:   numQuestions,
+		SourceMaterial: sourceMaterial,
+		Difficulty:     difficulty,
+		CreatedAt:      time.Now(),
+		Status:         "generating",
+	}
+
+	if err := s.db.CreateQuiz(quiz); err != nil {
 		http.Error(w, "Failed to create quiz", http.StatusInternalServerError)
 		return
 	}
@@ -336,11 +284,7 @@ func (s *Server) handleQuiz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleQuizSetup(w http.ResponseWriter, r *http.Request, quizID string) {
 	log.Printf("Handling quiz setup request: %v", r.URL.Path)
 	// Get quiz info
-	var quiz Quiz
-	err := s.db.QueryRow(
-		"SELECT id, topic, num_questions, source_material, difficulty, created_at, status FROM quizzes WHERE id = ?",
-		quizID,
-	).Scan(&quiz.ID, &quiz.Topic, &quiz.NumQuestions, &quiz.SourceMaterial, &quiz.Difficulty, &quiz.CreatedAt, &quiz.Status)
+	quiz, err := s.db.GetQuiz(quizID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -427,8 +371,7 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 	}
 
 	// Check if this specific question exists
-	var questionExists bool
-	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM questions WHERE quiz_id = ? AND question_num = ?)", quizID, questionNum).Scan(&questionExists)
+	questionExists, err := s.db.QuestionExists(quizID, questionNum)
 	if err != nil {
 		log.Printf("Failed to check if question exists: %v", err)
 		http.Error(w, "Failed to check question", http.StatusInternalServerError)
@@ -450,26 +393,15 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 	}
 
 	// Get question from database
-	var question struct {
-		ID            string
-		Text          string
-		Options       string
-		CorrectAnswer int
-		Explanation   string
-	}
-
-	err = s.db.QueryRow(
-		"SELECT id, text, options, correct_answer, explanation FROM questions WHERE quiz_id = ? AND question_num = ?",
-		quizID, questionNum,
-	).Scan(&question.ID, &question.Text, &question.Options, &question.CorrectAnswer, &question.Explanation)
+	question, err := s.db.GetQuestion(quizID, questionNum)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
 	// Parse options
-	var options []string
-	if err := json.Unmarshal([]byte(question.Options), &options); err != nil {
+	options, err := quizgenerator.JSONToOptions(question.Options)
+	if err != nil {
 		http.Error(w, "Failed to parse question", http.StatusInternalServerError)
 		return
 	}
@@ -524,14 +456,13 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 	}
 
 	// Check if quiz is complete
-	var quiz Quiz
-	err = s.db.QueryRow("SELECT num_questions FROM quizzes WHERE id = ?", quizID).Scan(&quiz.NumQuestions)
+	numQuestions, err := s.db.GetQuizNumQuestions(quizID)
 	if err != nil {
 		http.Error(w, "Failed to get quiz info", http.StatusInternalServerError)
 		return
 	}
 
-	if questionNum >= quiz.NumQuestions {
+	if questionNum >= numQuestions {
 		gameSession.Completed = true
 		session.Values["game"] = gameSession
 		session.Save(r, w)
@@ -563,26 +494,18 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, quizID st
 	}
 
 	// Get quiz info
-	var quiz Quiz
-	err := s.db.QueryRow(
-		"SELECT id, topic, num_questions, source_material, difficulty, created_at, status FROM quizzes WHERE id = ?",
-		quizID,
-	).Scan(&quiz.ID, &quiz.Topic, &quiz.NumQuestions, &quiz.SourceMaterial, &quiz.Difficulty, &quiz.CreatedAt, &quiz.Status)
+	quiz, err := s.db.GetQuiz(quizID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
 	// Get all questions
-	rows, err := s.db.Query(
-		"SELECT question_num, text, options, correct_answer, explanation FROM questions WHERE quiz_id = ? ORDER BY question_num",
-		quizID,
-	)
+	dbQuestions, err := s.db.GetQuestions(quizID)
 	if err != nil {
 		http.Error(w, "Failed to get questions", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
 
 	var questions []struct {
 		QuestionNum   int
@@ -592,22 +515,10 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, quizID st
 		Explanation   string
 	}
 
-	for rows.Next() {
-		var q struct {
-			QuestionNum   int
-			Text          string
-			Options       string
-			CorrectAnswer int
-			Explanation   string
-		}
-		err := rows.Scan(&q.QuestionNum, &q.Text, &q.Options, &q.CorrectAnswer, &q.Explanation)
-		if err != nil {
-			continue
-		}
-
+	for _, q := range dbQuestions {
 		// Parse options
-		var options []string
-		if err := json.Unmarshal([]byte(q.Options), &options); err != nil {
+		options, err := quizgenerator.JSONToOptions(q.Options)
+		if err != nil {
 			continue
 		}
 
@@ -685,20 +596,30 @@ func (s *Server) generateQuiz(quizID, topic string, numQuestions int, sourceMate
 
 	for question := range questionChan {
 		// Store question in database
-		optionsJSON, _ := json.Marshal(question.Options)
-		_, err := s.db.Exec(
-			"INSERT INTO questions (id, quiz_id, question_num, text, options, correct_answer, explanation) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			question.ID, quizID, questionNum, question.Text, string(optionsJSON), question.CorrectAnswer, question.Explanation,
-		)
+		optionsJSON, err := quizgenerator.OptionsToJSON(question.Options)
 		if err != nil {
+			log.Printf("Failed to marshal options for question %s: %v", question.ID, err)
+			continue
+		}
+
+		dbQuestion := &quizgenerator.DBQuestion{
+			ID:            question.ID,
+			QuizID:        quizID,
+			QuestionNum:   questionNum,
+			Text:          question.Text,
+			Options:       optionsJSON,
+			CorrectAnswer: question.CorrectAnswer,
+			Explanation:   question.Explanation,
+		}
+
+		if err := s.db.CreateQuestion(dbQuestion); err != nil {
 			log.Printf("Failed to store question %s: %v", question.ID, err)
 			continue
 		}
 
 		// Mark quiz as ready as soon as the first question is generated
 		if !firstQuestionGenerated {
-			_, err = s.db.Exec("UPDATE quizzes SET status = 'ready' WHERE id = ?", quizID)
-			if err != nil {
+			if err := s.db.UpdateQuizStatus(quizID, "ready"); err != nil {
 				log.Printf("Failed to update quiz status %s: %v", quizID, err)
 			} else {
 				log.Printf("Quiz %s marked as ready after first question", quizID)
@@ -713,8 +634,7 @@ func (s *Server) generateQuiz(quizID, topic string, numQuestions int, sourceMate
 	}
 
 	// Mark quiz as completed when all questions are done
-	_, err = s.db.Exec("UPDATE quizzes SET status = 'completed' WHERE id = ?", quizID)
-	if err != nil {
+	if err := s.db.UpdateQuizStatus(quizID, "completed"); err != nil {
 		log.Printf("Failed to update quiz status to completed %s: %v", quizID, err)
 	}
 }
