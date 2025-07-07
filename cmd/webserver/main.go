@@ -149,15 +149,23 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all quizzes from database
-	quizzes, err := s.db.GetQuizzes(10)
+	allQuizzes, err := s.db.GetQuizzes(0) // Get all quizzes
 	if err != nil {
 		log.Printf("Failed to get quizzes: %v", err)
 		http.Error(w, "Failed to get quizzes", http.StatusInternalServerError)
 		return
 	}
 
+	// Filter to only show completed quizzes
+	var completedQuizzes []quizgenerator.DBQuiz
+	for _, quiz := range allQuizzes {
+		if quiz.Status == "completed" {
+			completedQuizzes = append(completedQuizzes, quiz)
+		}
+	}
+
 	err = s.templates["home"].ExecuteTemplate(w, "base.html", map[string]interface{}{
-		"Quizzes": quizzes,
+		"Quizzes": completedQuizzes,
 	})
 	if err != nil {
 		log.Printf("Template error in home: %v", err)
