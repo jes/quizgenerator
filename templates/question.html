@@ -34,9 +34,28 @@
     </div>
 </form>
 
+<div class="progress-container">
+    <div class="progress-info">
+        <span class="progress-text">{{.QuestionNum}} of {{.TotalQuestions}}</span>
+        <span class="progress-percentage">{{printf "%.0f" (mul (div .QuestionNum .TotalQuestions) 100)}}%</span>
+    </div>
+    <div class="progress-bar">
+        <div class="progress-fill" data-progress="{{printf "%.1f" (mul (div .QuestionNum .TotalQuestions) 100)}}"></div>
+    </div>
+</div>
+
 <script>
 // Add click handlers to make entire answer options clickable
 document.addEventListener('DOMContentLoaded', function() {
+    // Set progress bar width
+    const progressFill = document.querySelector('.progress-fill');
+    if (progressFill) {
+        const progress = progressFill.getAttribute('data-progress');
+        if (progress) {
+            progressFill.style.width = progress + '%';
+        }
+    }
+    
     const answerOptions = document.querySelectorAll('.answer-option');
     
     answerOptions.forEach(function(option) {

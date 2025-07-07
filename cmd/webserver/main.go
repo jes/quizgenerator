@@ -415,6 +415,14 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 		return
 	}
 
+	// Get total number of questions for progress indicator
+	totalQuestions, err := s.db.GetQuizActualQuestionCount(quizID)
+	if err != nil {
+		log.Printf("Failed to get total questions: %v", err)
+		// Use a fallback value
+		totalQuestions = 10
+	}
+
 	// Parse options
 	options, err := quizgenerator.JSONToOptions(question.Options)
 	if err != nil {
@@ -424,11 +432,12 @@ func (s *Server) handleQuestion(w http.ResponseWriter, r *http.Request, quizID s
 
 	if r.Method == "GET" {
 		err := s.templates["question"].ExecuteTemplate(w, "base.html", map[string]interface{}{
-			"QuizID":      quizID,
-			"QuestionNum": questionNum,
-			"Question":    question.Text,
-			"Options":     options,
-			"Players":     gameSession.Players,
+			"QuizID":         quizID,
+			"QuestionNum":    questionNum,
+			"TotalQuestions": totalQuestions,
+			"Question":       question.Text,
+			"Options":        options,
+			"Players":        gameSession.Players,
 		})
 		if err != nil {
 			log.Printf("Template error in question: %v", err)
