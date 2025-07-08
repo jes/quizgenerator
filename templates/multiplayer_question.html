@@ -1,0 +1,63 @@
+{{define "content"}}
+<h1>Question {{.QuestionNum}}</h1>
+
+<div class="question">
+    <h2>{{.Question}}</h2>
+</div>
+
+<div style="margin: 20px 0;">
+    <h3>👥 Players</h3>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+        {{range .Players}}
+        <span style="background-color: #e9ecef; padding: 5px 10px; border-radius: 15px; font-size: 14px;">
+            {{.Name}} ({{.Score}} pts)
+        </span>
+        {{end}}
+    </div>
+</div>
+
+<form method="POST" action="/multiplayer/{{.SessionID}}/answer">
+    <input type="hidden" name="question_num" value="{{.QuestionNum}}">
+    <input type="hidden" name="player_id" value="{{.PlayerID}}">
+    <input type="hidden" name="player_name" value="{{.PlayerName}}">
+    
+    <div class="question-container">
+        <div class="player-section">
+            <div class="player-name">{{.PlayerName}}'s Answer</div>
+            <div class="answers">
+                {{range $optionIndex, $option := .Options}}
+                <div class="answer-option">
+                    <input type="radio" id="answer_{{$optionIndex}}" 
+                           name="answer" value="{{$optionIndex}}" required>
+                    <label for="answer_{{$optionIndex}}">{{$option}}</label>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 30px;">
+        <button type="submit" class="btn">Submit Answer</button>
+    </div>
+</form>
+
+<div class="progress-container">
+    <div class="progress-info">
+        <span class="progress-text">{{.QuestionNum}} of {{.TotalQuestions}}</span>
+        <span class="progress-percentage">{{printf "%.0f" (mul (div .QuestionNum .TotalQuestions) 100)}}%</span>
+    </div>
+    <div class="progress-bar">
+        <div class="progress-fill" data-progress="{{printf "%.1f" (mul (div .QuestionNum .TotalQuestions) 100)}}"></div>
+    </div>
+</div>
+
+<script>
+// Add click handlers to make entire answer options clickable
+document.querySelectorAll('.answer-option').forEach(function(option) {
+    option.addEventListener('click', function() {
+        const radio = this.querySelector('input[type="radio"]');
+        radio.checked = true;
+    });
+});
+</script>
+{{end}} 

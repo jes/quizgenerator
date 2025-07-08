@@ -1,0 +1,43 @@
+{{define "content"}}
+<h1>🎮 Create Multiplayer Session</h1>
+
+<div class="question">
+    <h2>Start a Multiplayer Quiz</h2>
+    <p>Create a multiplayer session and share the link with your friends!</p>
+</div>
+
+<form method="POST" action="/multiplayer/new">
+    <div class="form-group">
+        <label for="quiz_id">Select Quiz</label>
+        <select id="quiz_id" name="quiz_id" required>
+            <option value="">Choose a quiz...</option>
+            {{range .Quizzes}}
+            <option value="{{.ID}}" {{if eq .ID $.SelectedQuizID}}selected{{end}}>
+                {{.Topic}} ({{.NumQuestions}} questions, {{.Difficulty}})
+            </option>
+            {{end}}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="host_name">Your Name</label>
+        <input type="text" id="host_name" name="host_name" placeholder="Enter your name" required>
+    </div>
+
+    <div style="text-align: center; margin-top: 30px;">
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+        <button type="submit" class="btn">Create Session</button>
+    </div>
+</form>
+
+<div style="margin-top: 40px; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+    <h3>How multiplayer works:</h3>
+    <ol style="text-align: left;">
+        <li>Select a completed quiz from the dropdown</li>
+        <li>Enter your name as the host</li>
+        <li>Share the generated link with your friends</li>
+        <li>Wait for everyone to join the lobby</li>
+        <li>Start the game when ready!</li>
+    </ol>
+</div>
+{{end}} 

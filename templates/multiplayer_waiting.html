@@ -1,0 +1,54 @@
+{{define "content"}}
+<h1>⏳ Waiting for Answers</h1>
+
+<div class="question">
+    <h2>Question {{.QuestionNum}}</h2>
+    <p>Waiting for all players to submit their answers...</p>
+</div>
+
+<div style="margin: 30px 0;">
+    <h3>👥 Player Status</h3>
+    <div style="display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
+        {{range .Players}}
+        <div class="question" style="margin: 0; text-align: center;">
+            <h4>{{.Name}}</h4>
+            <p><strong>Score:</strong> {{.Score}} pts</p>
+            {{$playerID := .ID}}
+            {{$hasAnswered := false}}
+            {{range $answeredID, $answered := $.AnsweredPlayers}}
+                {{if eq $answeredID $playerID}}
+                    {{$hasAnswered = true}}
+                {{end}}
+            {{end}}
+            {{if $hasAnswered}}
+            <span style="color: #28a745; font-size: 24px;">✅</span>
+            <p><small>Answered</small></p>
+            {{else}}
+            <span style="color: #ffc107; font-size: 24px;">⏳</span>
+            <p><small>Thinking...</small></p>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<div style="text-align: center; margin-top: 30px;">
+    <div class="loading">
+        <div class="spinner"></div>
+        <p>Waiting for everyone to answer...</p>
+        <p><small>This page will automatically refresh every 2 seconds.</small></p>
+    </div>
+</div>
+
+<script>
+// Auto-refresh every 2 seconds, preserving player info
+setTimeout(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const playerId = urlParams.get('player_id');
+    const playerName = urlParams.get('player_name');
+    const refreshUrl = window.location.pathname + 
+        (playerId && playerName ? `?player_id=${playerId}&player_name=${playerName}` : '');
+    window.location.href = refreshUrl;
+}, 2000);
+</script>
+{{end}} 

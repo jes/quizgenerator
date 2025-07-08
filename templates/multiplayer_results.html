@@ -1,0 +1,55 @@
+{{define "content"}}
+<h1>🏆 Multiplayer Quiz Results</h1>
+
+<div class="question">
+    <h2>{{.Quiz.Topic}}</h2>
+    <p><strong>Final Scores:</strong></p>
+    {{range $index, $player := .Players}}
+    <div class="score">
+        {{$player.Name}}: {{$player.Score}}/{{$.Quiz.NumQuestions}} 
+        ({{printf "%.1f" (mul (div $player.Score $.Quiz.NumQuestions) 100)}}%)
+    </div>
+    {{end}}
+</div>
+
+<div class="results">
+    {{range $qIndex, $question := .Questions}}
+    <div class="result-item">
+        <h3>Question {{add $qIndex 1}}</h3>
+        <p><strong>{{$question.Text}}</strong></p>
+        
+        <div class="options">
+            {{range $optIndex, $option := $question.Options}}
+            <div class="option {{if eq $optIndex $question.CorrectAnswer}}correct{{end}}">
+                <strong>{{index (list "A" "B" "C" "D") $optIndex}}) {{$option}}</strong>
+                {{if eq $optIndex $question.CorrectAnswer}} ✅ (CORRECT){{end}}
+            </div>
+            {{end}}
+        </div>
+
+        <div style="margin-top: 15px;">
+            <strong>Player Answers:</strong>
+            {{range $pIndex, $player := $.Players}}
+            {{$playerAnswer := index (index $.Answers (add $qIndex 1)) $player.ID}}
+            <div class="{{if eq $playerAnswer $question.CorrectAnswer}}correct{{else}}incorrect{{end}}">
+                {{$player.Name}}: {{index (list "A" "B" "C" "D") $playerAnswer}}) 
+                {{index $question.Options $playerAnswer}}
+                {{if eq $playerAnswer $question.CorrectAnswer}} ✅{{else}} ❌{{end}}
+            </div>
+            {{end}}
+        </div>
+
+        {{if $question.Explanation}}
+        <div style="margin-top: 15px; padding: 10px; background-color: #e7f3ff; border-radius: 5px;">
+            <strong>💡 Explanation:</strong> {{$question.Explanation}}
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+</div>
+
+<div style="text-align: center; margin-top: 40px;">
+    <a href="/" class="btn">Back to Home</a>
+    <a href="/multiplayer/new" class="btn">Start New Game</a>
+</div>
+{{end}} 

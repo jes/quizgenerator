@@ -1,0 +1,72 @@
+{{define "content"}}
+<h1>🎮 Quiz Lobby</h1>
+
+<div class="question">
+    <h2>{{.Quiz.Topic}}</h2>
+    <p><strong>Questions:</strong> {{.Quiz.NumQuestions}}</p>
+    <p><strong>Difficulty:</strong> {{.Quiz.Difficulty}}</p>
+    <p><strong>Host:</strong> {{.Session.HostName}}</p>
+    <p><strong>Status:</strong> 
+        {{if eq .Session.Status "waiting"}}
+            <span style="color: #ffc107;">⏳ Waiting for players...</span>
+        {{else if eq .Session.Status "playing"}}
+            <span style="color: #28a745;">🎮 Game in progress!</span>
+        {{end}}
+    </p>
+</div>
+
+<div style="margin: 30px 0;">
+    <h3>👥 Connected Players ({{len .Players}})</h3>
+    <div style="display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
+        {{range .Players}}
+        <div class="question" style="margin: 0; text-align: center;">
+            <h4>{{.Name}}</h4>
+            <p><small>Joined: {{.JoinedAt.Format "3:04 PM"}}</small></p>
+            {{if .Ready}}
+            <span style="color: #28a745;">✅ Ready</span>
+            {{else}}
+            <span style="color: #ffc107;">⏳ Joining...</span>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+
+{{if eq .Session.Status "waiting"}}
+<div style="text-align: center; margin-top: 30px;">
+    <form method="POST" action="/multiplayer/{{.SessionID}}/start" style="display: inline;">
+        <input type="hidden" name="player_id" value="{{.PlayerID}}">
+        <input type="hidden" name="player_name" value="{{.PlayerName}}">
+        <button type="submit" class="btn" {{if lt (len .Players) 1}}disabled{{end}}>
+            Start Game ({{len .Players}} players)
+        </button>
+    </form>
+</div>
+
+<div style="margin-top: 20px; text-align: center;">
+    <p><strong>Share this link with your friends:</strong></p>
+    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;">
+        <code id="session-link">{{.SessionID}}</code>
+        <button onclick="copyLink()" class="btn" style="margin-left: 10px; padding: 5px 10px; font-size: 14px;">Copy</button>
+    </div>
+    <p><small>This page will automatically refresh every 3 seconds.</small></p>
+</div>
+{{end}}
+
+<script>
+function copyLink() {
+    const link = window.location.origin + '/multiplayer/' + '{{.SessionID}}';
+    navigator.clipboard.writeText(link);
+}
+
+// Auto-refresh every 3 seconds, preserving player info
+setTimeout(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const playerId = urlParams.get('player_id');
+    const playerName = urlParams.get('player_name');
+    const refreshUrl = window.location.pathname + 
+        (playerId && playerName ? `?player_id=${playerId}&player_name=${playerName}` : '');
+    window.location.href = refreshUrl;
+}, 3000);
+</script>
+{{end}} 

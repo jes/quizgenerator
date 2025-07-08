@@ -4,8 +4,9 @@
     Create and play interactive quizzes with AI-generated questions!
 </p>
 
-<div style="text-align: center;">
+<div style="text-align: center; margin-bottom: 40px;">
     <a href="/quiz/new" class="btn">Make a Quiz</a>
+    <a href="/multiplayer/new" class="btn" style="background-color: #28a745;">🎮 Multiplayer Mode</a>
 </div>
 
 <div style="margin-top: 40px; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
@@ -16,6 +17,14 @@
         <li>Wait for AI to generate questions (usually takes 30-60 seconds)</li>
         <li>Add players and start playing!</li>
         <li>Review results and explanations at the end</li>
+    </ol>
+    
+    <h3 style="margin-top: 20px;">🎮 Multiplayer Mode:</h3>
+    <ol style="text-align: left;">
+        <li>Click "Multiplayer Mode" to start a multiplayer session</li>
+        <li>Select a completed quiz and enter your name as host</li>
+        <li>Share the generated link with your friends</li>
+        <li>Everyone joins and plays together in real-time!</li>
     </ol>
 </div>
 
@@ -43,6 +52,9 @@
             {{if or (eq .Status "ready") (eq .Status "completed")}}
             <div style="text-align: center; margin-top: 15px;">
                 <a href="/quiz/{{.ID}}" class="btn">Play Quiz</a>
+                {{if eq .Status "completed"}}
+                <a href="/multiplayer/new?quiz_id={{.ID}}" class="btn" style="background-color: #28a745;">🎮 Multiplayer</a>
+                {{end}}
             </div>
             {{end}}
         </div>

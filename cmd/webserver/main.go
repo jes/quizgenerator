@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/gob"
 	"fmt"
 	"html/template"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"quizgenerator"
@@ -16,10 +18,38 @@ import (
 	"github.com/gorilla/sessions"
 )
 
+// MultiplayerSession represents a multiplayer quiz session
+type MultiplayerSession struct {
+	ID         string                 `json:"id"`
+	QuizID     string                 `json:"quiz_id"`
+	HostName   string                 `json:"host_name"`
+	Status     string                 `json:"status"` // "waiting", "playing", "completed"
+	CurrentQ   int                    `json:"current_q"`
+	CreatedAt  time.Time              `json:"created_at"`
+	StartedAt  *time.Time             `json:"started_at,omitempty"`
+	MaxPlayers int                    `json:"max_players"`
+	Players    []MultiplayerPlayer    `json:"players"`
+	Answers    map[int]map[string]int `json:"answers"` // questionNum -> playerID -> answer
+	mu         sync.RWMutex
+}
+
+// MultiplayerPlayer represents a player in a multiplayer session
+type MultiplayerPlayer struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	Name      string    `json:"name"`
+	JoinedAt  time.Time `json:"joined_at"`
+	Score     int       `json:"score"`
+	Ready     bool      `json:"ready"`
+}
+
 type Server struct {
 	db        *quizgenerator.DB
 	store     *sessions.CookieStore
 	templates map[string]*template.Template
+	// Multiplayer in-memory storage
+	multiplayerSessions map[string]*MultiplayerSession
+	mu                  sync.RWMutex
 }
 
 type GameSession struct {
@@ -116,6 +146,13 @@ func main() {
 		{"question", "templates/question.html"},
 		{"generating", "templates/generating.html"},
 		{"results", "templates/results.html"},
+		// Multiplayer templates
+		{"new_multiplayer", "templates/new_multiplayer.html"},
+		{"join_session", "templates/join_session.html"},
+		{"multiplayer_lobby", "templates/multiplayer_lobby.html"},
+		{"multiplayer_question", "templates/multiplayer_question.html"},
+		{"multiplayer_waiting", "templates/multiplayer_waiting.html"},
+		{"multiplayer_results", "templates/multiplayer_results.html"},
 	}
 
 	for _, tmpl := range templateFiles {
@@ -126,12 +163,16 @@ func main() {
 		db:        db,
 		store:     store,
 		templates: templates,
+		// Initialize multiplayer sessions map
+		multiplayerSessions: make(map[string]*MultiplayerSession),
 	}
 
 	// Setup routes
 	http.HandleFunc("/", server.handleHome)
 	http.HandleFunc("/quiz/new", server.handleNewQuiz)
 	http.HandleFunc("/quiz/", server.handleQuiz)
+	// Add multiplayer routes
+	http.HandleFunc("/multiplayer/", server.handleMultiplayer)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -140,6 +181,27 @@ func main() {
 
 	log.Printf("Starting server on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+// Helper functions for multiplayer
+func generateSessionID() string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 8)
+	rand.Read(b)
+	for i := range b {
+		b[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(b)
+}
+
+func generatePlayerID() string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 6)
+	rand.Read(b)
+	for i := range b {
+		b[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(b)
 }
 
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
@@ -577,8 +639,9 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, quizID st
 func generateQuizID() string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, 12)
+	rand.Read(b)
 	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		b[i] = charset[b[i]%byte(len(charset))]
 	}
 	return string(b)
 }

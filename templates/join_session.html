@@ -1,0 +1,28 @@
+{{define "content"}}
+<h1>🎮 Join Multiplayer Session</h1>
+
+<div class="question">
+    <h2>Join Quiz Session</h2>
+    <p>Enter your name to join the multiplayer quiz!</p>
+</div>
+
+<form method="POST" action="/multiplayer/{{.SessionID}}">
+    <div class="form-group">
+        <label for="player_name">Your Name</label>
+        <input type="text" id="player_name" name="player_name" placeholder="Enter your name" required>
+    </div>
+
+    <div style="text-align: center; margin-top: 30px;">
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+        <button type="submit" class="btn">Join Session</button>
+    </div>
+</form>
+
+<div style="margin-top: 40px; padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+    <h3>Session Info:</h3>
+    <p><strong>Quiz:</strong> {{.Quiz.Topic}}</p>
+    <p><strong>Questions:</strong> {{.Quiz.NumQuestions}}</p>
+    <p><strong>Difficulty:</strong> {{.Quiz.Difficulty}}</p>
+    <p><strong>Host:</strong> {{.Quiz.HostName}}</p>
+</div>
+{{end}} 
