@@ -16,10 +16,8 @@
     </div>
 </div>
 
-<form method="POST" action="/multiplayer/{{.SessionID}}/answer">
+<form method="POST" action="/multiplayer/{{.PlayerToken}}/answer">
     <input type="hidden" name="question_num" value="{{.QuestionNum}}">
-    <input type="hidden" name="player_id" value="{{.PlayerID}}">
-    <input type="hidden" name="player_name" value="{{.PlayerName}}">
     
     <div class="question-container">
         <div class="player-section">

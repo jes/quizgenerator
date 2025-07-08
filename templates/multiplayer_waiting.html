@@ -41,14 +41,9 @@
 </div>
 
 <script>
-// Auto-refresh every 2 seconds, preserving player info
+// Auto-refresh every 2 seconds
 setTimeout(function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const playerId = urlParams.get('player_id');
-    const playerName = urlParams.get('player_name');
-    const refreshUrl = window.location.pathname + 
-        (playerId && playerName ? `?player_id=${playerId}&player_name=${playerName}` : '');
-    window.location.href = refreshUrl;
+    window.location.href = window.location.pathname;
 }, 2000);
 </script>
 {{end}} 

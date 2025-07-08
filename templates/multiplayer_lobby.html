@@ -35,8 +35,7 @@
 {{if eq .Session.Status "waiting"}}
 <div style="text-align: center; margin-top: 30px;">
     <form method="POST" action="/multiplayer/{{.SessionID}}/start" style="display: inline;">
-        <input type="hidden" name="player_id" value="{{.PlayerID}}">
-        <input type="hidden" name="player_name" value="{{.PlayerName}}">
+        <input type="hidden" name="player_token" value="{{.PlayerToken}}">
         <button type="submit" class="btn" {{if lt (len .Players) 1}}disabled{{end}}>
             Start Game ({{len .Players}} players)
         </button>
@@ -59,14 +58,9 @@ function copyLink() {
     navigator.clipboard.writeText(link);
 }
 
-// Auto-refresh every 3 seconds, preserving player info
+// Auto-refresh every 3 seconds
 setTimeout(function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const playerId = urlParams.get('player_id');
-    const playerName = urlParams.get('player_name');
-    const refreshUrl = window.location.pathname + 
-        (playerId && playerName ? `?player_id=${playerId}&player_name=${playerName}` : '');
-    window.location.href = refreshUrl;
+    window.location.reload();
 }, 3000);
 </script>
 {{end}} 

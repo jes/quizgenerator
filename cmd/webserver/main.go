@@ -49,7 +49,15 @@ type Server struct {
 	templates map[string]*template.Template
 	// Multiplayer in-memory storage
 	multiplayerSessions map[string]*MultiplayerSession
+	playerTokens        map[string]PlayerTokenInfo // playerToken -> session/player info
 	mu                  sync.RWMutex
+}
+
+// PlayerTokenInfo stores the mapping from player token to session and player info
+type PlayerTokenInfo struct {
+	SessionID  string
+	PlayerID   string
+	PlayerName string
 }
 
 type GameSession struct {
@@ -165,6 +173,7 @@ func main() {
 		templates: templates,
 		// Initialize multiplayer sessions map
 		multiplayerSessions: make(map[string]*MultiplayerSession),
+		playerTokens:        make(map[string]PlayerTokenInfo),
 	}
 
 	// Setup routes

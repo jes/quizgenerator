@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,6 +16,8 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/multiplayer/")
 	parts := strings.Split(path, "/")
 
+	log.Printf("Multiplayer request: path=%s, parts=%v", path, parts)
+
 	if len(parts) == 0 {
 		http.NotFound(w, r)
 		return
@@ -22,38 +25,57 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 1 && parts[0] == "new" {
 		// /multiplayer/new - create new multiplayer session
+		log.Printf("Routing to handleNewMultiplayer")
 		s.handleNewMultiplayer(w, r)
 		return
 	}
 
 	if len(parts) == 1 {
-		// /multiplayer/{sessionID} - unified session page
-		sessionID := parts[0]
-		s.handleUnifiedSession(w, r, sessionID)
-		return
-	}
+		// Check if this is a player token first
+		s.mu.RLock()
+		_, isPlayerToken := s.playerTokens[parts[0]]
+		s.mu.RUnlock()
 
-	if len(parts) == 2 && parts[1] == "answer" {
-		// /multiplayer/{sessionID}/answer - submit answer
-		sessionID := parts[0]
-		s.handleSubmitAnswer(w, r, sessionID)
-		return
+		if isPlayerToken {
+			// /multiplayer/{playerToken} - player's game page
+			playerToken := parts[0]
+			log.Printf("Routing to handlePlayerGame with playerToken: %s", playerToken)
+			s.handlePlayerGame(w, r, playerToken)
+			return
+		} else {
+			// /multiplayer/{sessionID} - lobby page (for joining)
+			sessionID := parts[0]
+			log.Printf("Routing to handleLobbyJoin with sessionID: %s", sessionID)
+			s.handleLobbyJoin(w, r, sessionID)
+			return
+		}
 	}
 
 	if len(parts) == 2 && parts[1] == "start" {
-		// /multiplayer/{sessionID}/start - start the game
+		// /multiplayer/{sessionID}/start - start the game (from lobby)
 		sessionID := parts[0]
+		log.Printf("Routing to handleStartGame with sessionID: %s", sessionID)
 		s.handleStartGame(w, r, sessionID)
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "results" {
-		// /multiplayer/{sessionID}/results - game results
-		sessionID := parts[0]
-		s.handleMultiplayerResults(w, r, sessionID)
+	if len(parts) == 2 && parts[1] == "answer" {
+		// /multiplayer/{playerToken}/answer - submit answer
+		playerToken := parts[0]
+		log.Printf("Routing to handleSubmitAnswer with playerToken: %s", playerToken)
+		s.handleSubmitAnswer(w, r, playerToken)
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "results" {
+		// /multiplayer/{playerToken}/results - game results
+		playerToken := parts[0]
+		log.Printf("Routing to handleMultiplayerResults with playerToken: %s", playerToken)
+		s.handleMultiplayerResults(w, r, playerToken)
+		return
+	}
+
+	log.Printf("No route matched, returning 404")
 	http.NotFound(w, r)
 }
 
@@ -147,13 +169,62 @@ func (s *Server) handleNewMultiplayer(w http.ResponseWriter, r *http.Request) {
 	}
 	session.Players = append(session.Players, hostPlayer)
 
-	// Store session in memory
+	// Generate player token for host
+	playerToken := generatePlayerToken()
+
+	// Store session and player token mapping atomically
 	s.mu.Lock()
 	s.multiplayerSessions[sessionID] = session
+	s.playerTokens[playerToken] = PlayerTokenInfo{
+		SessionID:  sessionID,
+		PlayerID:   hostPlayer.ID,
+		PlayerName: hostName,
+	}
 	s.mu.Unlock()
 
-	// Redirect to unified session URL with player info
-	http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s?player_id=%s&player_name=%s", sessionID, hostPlayer.ID, hostName), http.StatusSeeOther)
+	log.Printf("Created session %s with player token %s for host %s", sessionID, playerToken, hostName)
+
+	// Redirect to player's game page using their token
+	http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s", playerToken), http.StatusSeeOther)
+}
+
+// handleLobbyJoin handles the lobby page where players can join
+func (s *Server) handleLobbyJoin(w http.ResponseWriter, r *http.Request, sessionID string) {
+	// Get session
+	s.mu.RLock()
+	session, exists := s.multiplayerSessions[sessionID]
+	s.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	// If game has started or completed, show error
+	if session.Status != "waiting" {
+		http.Error(w, "Game has already started or completed", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method == "GET" {
+		// Show join form
+		err := s.templates["join_session"].ExecuteTemplate(w, "base.html", map[string]interface{}{
+			"SessionID": sessionID,
+			"Quiz":      session,
+		})
+		if err != nil {
+			log.Printf("Template error in join_session: %v", err)
+			http.Error(w, "Template error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if r.Method == "POST" {
+		s.handleJoinSession(w, r, sessionID)
+		return
+	}
+
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
 // handleJoinSession handles joining an existing multiplayer session
@@ -207,12 +278,91 @@ func (s *Server) handleJoinSession(w http.ResponseWriter, r *http.Request, sessi
 	session.Players = append(session.Players, newPlayer)
 	session.mu.Unlock()
 
-	// Redirect to unified session URL with player info
-	http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s?player_id=%s&player_name=%s", sessionID, newPlayer.ID, playerName), http.StatusSeeOther)
+	// Generate player token
+	playerToken := generatePlayerToken()
+
+	// Store player token mapping
+	s.mu.Lock()
+	s.playerTokens[playerToken] = PlayerTokenInfo{
+		SessionID:  sessionID,
+		PlayerID:   newPlayer.ID,
+		PlayerName: playerName,
+	}
+	s.mu.Unlock()
+
+	// Redirect to player's game page using their token
+	http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s", playerToken), http.StatusSeeOther)
+}
+
+// generatePlayerToken generates a 12-character player token
+func generatePlayerToken() string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 12)
+	rand.Read(b)
+	for i := range b {
+		b[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(b)
+}
+
+// getPlayerToken finds the player token for a given player ID
+func (s *Server) getPlayerToken(playerID string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for token, info := range s.playerTokens {
+		if info.PlayerID == playerID {
+			return token
+		}
+	}
+	return ""
+}
+
+// handlePlayerGame handles the player's game page using their private token
+func (s *Server) handlePlayerGame(w http.ResponseWriter, r *http.Request, playerToken string) {
+	log.Printf("Handling player game request for token: %s", playerToken)
+
+	// Get player info from token
+	s.mu.RLock()
+	playerInfo, exists := s.playerTokens[playerToken]
+	s.mu.RUnlock()
+
+	if !exists {
+		log.Printf("Player token not found: %s", playerToken)
+		http.Error(w, "Invalid player token", http.StatusNotFound)
+		return
+	}
+
+	log.Printf("Found player info: SessionID=%s, PlayerID=%s, PlayerName=%s", playerInfo.SessionID, playerInfo.PlayerID, playerInfo.PlayerName)
+
+	// Get session
+	s.mu.RLock()
+	session, exists := s.multiplayerSessions[playerInfo.SessionID]
+	s.mu.RUnlock()
+
+	if !exists {
+		log.Printf("Session not found: %s", playerInfo.SessionID)
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	log.Printf("Found session: ID=%s, Status=%s", session.ID, session.Status)
+
+	// Route based on session status
+	switch session.Status {
+	case "waiting":
+		s.handleLobbyContent(w, r, session, playerInfo.PlayerID, playerInfo.PlayerName)
+	case "playing":
+		s.handleQuestionContent(w, r, session, playerInfo.PlayerID, playerInfo.PlayerName)
+	case "completed":
+		s.handleMultiplayerResults(w, r, playerToken)
+	default:
+		http.Error(w, "Invalid session status", http.StatusBadRequest)
+	}
 }
 
 // handleSubmitAnswer handles a player submitting their answer
-func (s *Server) handleSubmitAnswer(w http.ResponseWriter, r *http.Request, sessionID string) {
+func (s *Server) handleSubmitAnswer(w http.ResponseWriter, r *http.Request, playerToken string) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -224,14 +374,20 @@ func (s *Server) handleSubmitAnswer(w http.ResponseWriter, r *http.Request, sess
 		return
 	}
 
-	// Get player info from form (passed from the question page)
-	playerID := r.FormValue("player_id")
-	playerName := r.FormValue("player_name")
+	// Get player info from token
+	s.mu.RLock()
+	playerInfo, exists := s.playerTokens[playerToken]
+	s.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Invalid player token", http.StatusNotFound)
+		return
+	}
 
 	answerStr := r.FormValue("answer")
 	questionNumStr := r.FormValue("question_num")
 
-	if playerID == "" || playerName == "" || answerStr == "" || questionNumStr == "" {
+	if answerStr == "" || questionNumStr == "" {
 		http.Error(w, "Missing required fields", http.StatusBadRequest)
 		return
 	}
@@ -250,7 +406,7 @@ func (s *Server) handleSubmitAnswer(w http.ResponseWriter, r *http.Request, sess
 
 	// Get session
 	s.mu.RLock()
-	session, exists := s.multiplayerSessions[sessionID]
+	session, exists := s.multiplayerSessions[playerInfo.SessionID]
 	s.mu.RUnlock()
 
 	if !exists {
@@ -263,37 +419,50 @@ func (s *Server) handleSubmitAnswer(w http.ResponseWriter, r *http.Request, sess
 	if session.Answers[questionNum] == nil {
 		session.Answers[questionNum] = make(map[string]int)
 	}
-	session.Answers[questionNum][playerID] = answer
+	session.Answers[questionNum][playerInfo.PlayerID] = answer
 	session.mu.Unlock()
 
 	// Check if all players have answered
-	allAnswered := s.checkAllPlayersAnswered(sessionID, questionNum)
+	allAnswered := s.checkAllPlayersAnswered(playerInfo.SessionID, questionNum)
 	if allAnswered {
-		// Move to next question or end game
-		s.moveToNextQuestion(sessionID, questionNum)
+		// Add 2-second delay before moving to next question
+		go func() {
+			time.Sleep(2 * time.Second)
+			s.moveToNextQuestion(playerInfo.SessionID, questionNum)
+		}()
 
 		// Check if game is completed
 		s.mu.RLock()
-		session, exists := s.multiplayerSessions[sessionID]
+		session, exists := s.multiplayerSessions[playerInfo.SessionID]
 		s.mu.RUnlock()
 
 		if exists && session.Status == "completed" {
-			http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s/results", sessionID), http.StatusSeeOther)
+			http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s/results", playerToken), http.StatusSeeOther)
 		} else {
-			// Redirect back to unified session URL
-			http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s?player_id=%s&player_name=%s", sessionID, playerID, playerName), http.StatusSeeOther)
+			// Redirect back to player's game page (will show waiting page for 2 seconds)
+			http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s", playerToken), http.StatusSeeOther)
 		}
 	} else {
-		// Redirect back to unified session URL (will show waiting page)
-		http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s?player_id=%s&player_name=%s", sessionID, playerID, playerName), http.StatusSeeOther)
+		// Redirect back to player's game page (will show waiting page)
+		http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s", playerToken), http.StatusSeeOther)
 	}
 }
 
 // handleMultiplayerResults shows the final results
-func (s *Server) handleMultiplayerResults(w http.ResponseWriter, _ *http.Request, sessionID string) {
+func (s *Server) handleMultiplayerResults(w http.ResponseWriter, _ *http.Request, playerToken string) {
+	// Get player info from token
+	s.mu.RLock()
+	playerInfo, exists := s.playerTokens[playerToken]
+	s.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Invalid player token", http.StatusNotFound)
+		return
+	}
+
 	// Get session
 	s.mu.RLock()
-	session, exists := s.multiplayerSessions[sessionID]
+	session, exists := s.multiplayerSessions[playerInfo.SessionID]
 	s.mu.RUnlock()
 
 	if !exists {
@@ -345,7 +514,7 @@ func (s *Server) handleMultiplayerResults(w http.ResponseWriter, _ *http.Request
 	session.mu.RUnlock()
 
 	err = s.templates["multiplayer_results"].ExecuteTemplate(w, "base.html", map[string]interface{}{
-		"SessionID": sessionID,
+		"SessionID": session.ID,
 		"Quiz":      quiz,
 		"Players":   players,
 		"Questions": questionsWithOptions,
@@ -355,35 +524,6 @@ func (s *Server) handleMultiplayerResults(w http.ResponseWriter, _ *http.Request
 		log.Printf("Template error in multiplayer_results: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
-	}
-}
-
-// handleUnifiedSession handles the main session page, showing different content based on state
-func (s *Server) handleUnifiedSession(w http.ResponseWriter, r *http.Request, sessionID string) {
-	// Get session
-	s.mu.RLock()
-	session, exists := s.multiplayerSessions[sessionID]
-	s.mu.RUnlock()
-
-	if !exists {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	// Get player info from URL
-	playerID := r.URL.Query().Get("player_id")
-	playerName := r.URL.Query().Get("player_name")
-
-	// Route based on session status
-	switch session.Status {
-	case "waiting":
-		s.handleLobbyContent(w, r, session, playerID, playerName)
-	case "playing":
-		s.handleQuestionContent(w, r, session, playerID, playerName)
-	case "completed":
-		s.handleMultiplayerResults(w, r, sessionID)
-	default:
-		http.Error(w, "Invalid session status", http.StatusBadRequest)
 	}
 }
 
@@ -498,12 +638,13 @@ func (s *Server) handleLobbyContent(w http.ResponseWriter, r *http.Request, sess
 	session.mu.RUnlock()
 
 	err = s.templates["multiplayer_lobby"].ExecuteTemplate(w, "base.html", map[string]interface{}{
-		"SessionID":  session.ID,
-		"Session":    session,
-		"Quiz":       quiz,
-		"Players":    players,
-		"PlayerID":   playerID,
-		"PlayerName": playerName,
+		"SessionID":   session.ID,
+		"Session":     session,
+		"Quiz":        quiz,
+		"Players":     players,
+		"PlayerID":    playerID,
+		"PlayerName":  playerName,
+		"PlayerToken": s.getPlayerToken(playerID),
 	})
 	if err != nil {
 		log.Printf("Template error in multiplayer_lobby: %v", err)
@@ -569,6 +710,7 @@ func (s *Server) handleQuestionContent(w http.ResponseWriter, r *http.Request, s
 		"Players":        players,
 		"PlayerID":       playerID,
 		"PlayerName":     playerName,
+		"PlayerToken":    s.getPlayerToken(playerID),
 	})
 	if err != nil {
 		log.Printf("Template error in multiplayer_question: %v", err)
@@ -602,6 +744,7 @@ func (s *Server) handleWaitingContent(w http.ResponseWriter, _ *http.Request, se
 		"AnsweredPlayers": answeredPlayers,
 		"PlayerID":        playerID,
 		"PlayerName":      playerName,
+		"PlayerToken":     s.getPlayerToken(playerID),
 	})
 	if err != nil {
 		log.Printf("Template error in multiplayer_waiting: %v", err)
@@ -614,6 +757,35 @@ func (s *Server) handleWaitingContent(w http.ResponseWriter, _ *http.Request, se
 func (s *Server) handleStartGame(w http.ResponseWriter, r *http.Request, sessionID string) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// Get player token from form
+	playerToken := r.FormValue("player_token")
+	if playerToken == "" {
+		http.Error(w, "Player token is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get player info from token
+	s.mu.RLock()
+	playerInfo, exists := s.playerTokens[playerToken]
+	s.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Invalid player token", http.StatusNotFound)
+		return
+	}
+
+	// Verify player belongs to this session
+	if playerInfo.SessionID != sessionID {
+		http.Error(w, "Player does not belong to this session", http.StatusBadRequest)
 		return
 	}
 
@@ -641,10 +813,6 @@ func (s *Server) handleStartGame(w http.ResponseWriter, r *http.Request, session
 	session.CurrentQ = 1
 	session.mu.Unlock()
 
-	// Get player info from form
-	playerID := r.FormValue("player_id")
-	playerName := r.FormValue("player_name")
-
-	// Redirect to unified session URL
-	http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s?player_id=%s&player_name=%s", sessionID, playerID, playerName), http.StatusSeeOther)
+	// Redirect to player's game page using their token
+	http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s", playerToken), http.StatusSeeOther)
 }
