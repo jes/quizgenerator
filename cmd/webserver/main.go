@@ -107,20 +107,38 @@ func main() {
 		"list": func(items ...interface{}) []interface{} {
 			return items
 		},
-		"index": func(slice interface{}, i int) interface{} {
+		"index": func(slice interface{}, i interface{}) interface{} {
 			switch v := slice.(type) {
 			case []interface{}:
-				return v[i]
+				if idx, ok := i.(int); ok {
+					return v[idx]
+				}
 			case []int:
-				return v[i]
+				if idx, ok := i.(int); ok {
+					return v[idx]
+				}
 			case []string:
-				return v[i]
+				if idx, ok := i.(int); ok {
+					return v[idx]
+				}
 			case [][]int:
-				return v[i]
+				if idx, ok := i.(int); ok {
+					return v[idx]
+				}
+			case map[int]map[string]int:
+				if idx, ok := i.(int); ok {
+					return v[idx]
+				}
+			case map[string]int:
+				if key, ok := i.(string); ok {
+					return v[key]
+				}
 			default:
 				log.Printf("Warning: index function called with unsupported type: %T", slice)
 				return nil
 			}
+			log.Printf("Warning: index function called with unsupported index type: %T", i)
+			return nil
 		},
 		"add": func(a, b int) int {
 			return a + b
@@ -130,6 +148,9 @@ func main() {
 		},
 		"div": func(a, b int) float64 {
 			return float64(a) / float64(b)
+		},
+		"gt": func(a, b int) bool {
+			return a > b
 		},
 		"printf": fmt.Sprintf,
 		"default": func(value, defaultValue interface{}) interface{} {

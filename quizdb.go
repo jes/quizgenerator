@@ -267,9 +267,9 @@ func (db *DB) UpdateQuizNumQuestions(id string, numQuestions int) error {
 }
 
 func (db *DB) GenerateQuiz(quizID, topic string, numQuestions int, sourceMaterial, difficulty string) {
-	// Ensure at least 3 questions are generated
-	if numQuestions < 3 {
-		numQuestions = 3
+	// Ensure at least 1 question is generated
+	if numQuestions < 1 {
+		numQuestions = 1
 	}
 
 	req := GenerationRequest{
@@ -300,11 +300,33 @@ func (db *DB) GenerateQuiz(quizID, topic string, numQuestions int, sourceMateria
 	questionChan, err := generator.GenerateQuizStream(ctx, req)
 	if err != nil {
 		log.Printf("Failed to generate quiz %s: %v", quizID, err)
+		// Update database to reflect that no questions were generated
+		if updateErr := db.UpdateQuizNumQuestions(quizID, 0); updateErr != nil {
+			log.Printf("Failed to update quiz num questions %s: %v", quizID, updateErr)
+		}
+		if updateErr := db.UpdateQuizStatus(quizID, "failed"); updateErr != nil {
+			log.Printf("Failed to update quiz status to failed %s: %v", quizID, updateErr)
+		}
 		return
 	}
 
 	questionNum := 1
 	firstQuestionGenerated := false
+
+	// Use a defer function to ensure we always update the database with actual question count
+	defer func() {
+		actualQuestions := questionNum - 1
+		if err := db.UpdateQuizNumQuestions(quizID, actualQuestions); err != nil {
+			log.Printf("Failed to update quiz num questions %s: %v", quizID, err)
+		}
+
+		// Mark quiz as completed when all questions are done
+		if err := db.UpdateQuizStatus(quizID, "completed"); err != nil {
+			log.Printf("Failed to update quiz status to completed %s: %v", quizID, err)
+		}
+
+		log.Printf("Quiz %s completed with %d questions (requested: %d)", quizID, actualQuestions, numQuestions)
+	}()
 
 	for question := range questionChan {
 		// Store question in database
@@ -346,19 +368,6 @@ func (db *DB) GenerateQuiz(quizID, topic string, numQuestions int, sourceMateria
 			break
 		}
 	}
-
-	// Update the quiz with the actual number of questions generated
-	actualQuestions := questionNum - 1
-	if err := db.UpdateQuizNumQuestions(quizID, actualQuestions); err != nil {
-		log.Printf("Failed to update quiz num questions %s: %v", quizID, err)
-	}
-
-	// Mark quiz as completed when all questions are done
-	if err := db.UpdateQuizStatus(quizID, "completed"); err != nil {
-		log.Printf("Failed to update quiz status to completed %s: %v", quizID, err)
-	}
-
-	log.Printf("Quiz %s completed with %d questions (requested: %d)", quizID, actualQuestions, numQuestions)
 }
 
 // GetQuizActualQuestionCount gets the actual number of questions that exist for a quiz

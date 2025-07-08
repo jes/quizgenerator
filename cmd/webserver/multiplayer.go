@@ -16,8 +16,6 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/multiplayer/")
 	parts := strings.Split(path, "/")
 
-	log.Printf("Multiplayer request: path=%s, parts=%v", path, parts)
-
 	if len(parts) == 0 {
 		http.NotFound(w, r)
 		return
@@ -25,7 +23,6 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 1 && parts[0] == "new" {
 		// /multiplayer/new - create new multiplayer session
-		log.Printf("Routing to handleNewMultiplayer")
 		s.handleNewMultiplayer(w, r)
 		return
 	}
@@ -39,13 +36,11 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 		if isPlayerToken {
 			// /multiplayer/{playerToken} - player's game page
 			playerToken := parts[0]
-			log.Printf("Routing to handlePlayerGame with playerToken: %s", playerToken)
 			s.handlePlayerGame(w, r, playerToken)
 			return
 		} else {
 			// /multiplayer/{sessionID} - lobby page (for joining)
 			sessionID := parts[0]
-			log.Printf("Routing to handleLobbyJoin with sessionID: %s", sessionID)
 			s.handleLobbyJoin(w, r, sessionID)
 			return
 		}
@@ -54,7 +49,6 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && parts[1] == "start" {
 		// /multiplayer/{sessionID}/start - start the game (from lobby)
 		sessionID := parts[0]
-		log.Printf("Routing to handleStartGame with sessionID: %s", sessionID)
 		s.handleStartGame(w, r, sessionID)
 		return
 	}
@@ -62,7 +56,6 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && parts[1] == "answer" {
 		// /multiplayer/{playerToken}/answer - submit answer
 		playerToken := parts[0]
-		log.Printf("Routing to handleSubmitAnswer with playerToken: %s", playerToken)
 		s.handleSubmitAnswer(w, r, playerToken)
 		return
 	}
@@ -70,7 +63,6 @@ func (s *Server) handleMultiplayer(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && parts[1] == "results" {
 		// /multiplayer/{playerToken}/results - game results
 		playerToken := parts[0]
-		log.Printf("Routing to handleMultiplayerResults with playerToken: %s", playerToken)
 		s.handleMultiplayerResults(w, r, playerToken)
 		return
 	}
@@ -181,8 +173,6 @@ func (s *Server) handleNewMultiplayer(w http.ResponseWriter, r *http.Request) {
 		PlayerName: hostName,
 	}
 	s.mu.Unlock()
-
-	log.Printf("Created session %s with player token %s for host %s", sessionID, playerToken, hostName)
 
 	// Redirect to player's game page using their token
 	http.Redirect(w, r, fmt.Sprintf("/multiplayer/%s", playerToken), http.StatusSeeOther)
@@ -320,8 +310,6 @@ func (s *Server) getPlayerToken(playerID string) string {
 
 // handlePlayerGame handles the player's game page using their private token
 func (s *Server) handlePlayerGame(w http.ResponseWriter, r *http.Request, playerToken string) {
-	log.Printf("Handling player game request for token: %s", playerToken)
-
 	// Get player info from token
 	s.mu.RLock()
 	playerInfo, exists := s.playerTokens[playerToken]
@@ -333,8 +321,6 @@ func (s *Server) handlePlayerGame(w http.ResponseWriter, r *http.Request, player
 		return
 	}
 
-	log.Printf("Found player info: SessionID=%s, PlayerID=%s, PlayerName=%s", playerInfo.SessionID, playerInfo.PlayerID, playerInfo.PlayerName)
-
 	// Get session
 	s.mu.RLock()
 	session, exists := s.multiplayerSessions[playerInfo.SessionID]
@@ -345,8 +331,6 @@ func (s *Server) handlePlayerGame(w http.ResponseWriter, r *http.Request, player
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
-
-	log.Printf("Found session: ID=%s, Status=%s", session.ID, session.Status)
 
 	// Route based on session status
 	switch session.Status {
@@ -484,20 +468,23 @@ func (s *Server) handleMultiplayerResults(w http.ResponseWriter, _ *http.Request
 		return
 	}
 
-	// Parse options for each question
-	questionsWithOptions := make([]map[string]interface{}, len(dbQuestions))
+	// Only show questions that were actually played (have answers)
+	var playedQuestions []map[string]interface{}
 	for i, question := range dbQuestions {
-		options, err := quizgenerator.JSONToOptions(question.Options)
-		if err != nil {
-			log.Printf("Failed to parse options for question %d: %v", i+1, err)
-			options = []string{"Error parsing options"}
-		}
+		questionNum := i + 1 // Convert to 1-based indexing
+		if answers, exists := session.Answers[questionNum]; exists && len(answers) > 0 {
+			options, err := quizgenerator.JSONToOptions(question.Options)
+			if err != nil {
+				log.Printf("Failed to parse options for question %d: %v", questionNum, err)
+				options = []string{"Error parsing options"}
+			}
 
-		questionsWithOptions[i] = map[string]interface{}{
-			"Text":          question.Text,
-			"Options":       options,
-			"CorrectAnswer": question.CorrectAnswer,
-			"Explanation":   question.Explanation,
+			playedQuestions = append(playedQuestions, map[string]interface{}{
+				"Text":          question.Text,
+				"Options":       options,
+				"CorrectAnswer": question.CorrectAnswer,
+				"Explanation":   question.Explanation,
+			})
 		}
 	}
 
@@ -517,7 +504,7 @@ func (s *Server) handleMultiplayerResults(w http.ResponseWriter, _ *http.Request
 		"SessionID": session.ID,
 		"Quiz":      quiz,
 		"Players":   players,
-		"Questions": questionsWithOptions,
+		"Questions": playedQuestions,
 		"Answers":   answers,
 	})
 	if err != nil {

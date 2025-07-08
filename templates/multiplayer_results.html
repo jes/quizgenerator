@@ -30,11 +30,21 @@
         <div style="margin-top: 15px;">
             <strong>Player Answers:</strong>
             {{range $pIndex, $player := $.Players}}
-            {{$playerAnswer := index (index $.Answers (add $qIndex 1)) $player.ID}}
+            {{$questionNum := add $qIndex 1}}
+            {{$playerAnswer := 0}}
+            {{if index $.Answers $questionNum}}
+                {{if index (index $.Answers $questionNum) $player.ID}}
+                    {{$playerAnswer = index (index $.Answers $questionNum) $player.ID}}
+                {{end}}
+            {{end}}
             <div class="{{if eq $playerAnswer $question.CorrectAnswer}}correct{{else}}incorrect{{end}}">
                 {{$player.Name}}: {{index (list "A" "B" "C" "D") $playerAnswer}}) 
-                {{index $question.Options $playerAnswer}}
-                {{if eq $playerAnswer $question.CorrectAnswer}} ✅{{else}} ❌{{end}}
+                {{if gt $playerAnswer 0}}
+                    {{index $question.Options $playerAnswer}}
+                {{else}}
+                    No answer
+                {{end}}
+                {{if eq $playerAnswer $question.CorrectAnswer}} ✅{{else if gt $playerAnswer 0}} ❌{{else}} ⏸️{{end}}
             </div>
             {{end}}
         </div>
